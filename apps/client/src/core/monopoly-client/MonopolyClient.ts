@@ -322,7 +322,7 @@ export class MonopolyClient {
 		});
 	}
 
-	public rollDice() {
+	public rollDice(manualValue?: number) {
 		// 客户端立即锁定，防止重复点击
 		const utilStore = useUtil();
 		utilStore.startAnimation();
@@ -330,7 +330,10 @@ export class MonopolyClient {
 		this.sendMsg({
 			type: SocketMsgType.Operation,
 			source: SocketMsgSource.Client,
-			data: { operateType: OperateType.RollDice, data: undefined },
+			data: {
+				operateType: OperateType.RollDice,
+				data: manualValue === undefined ? undefined : { manualValue },
+			},
 		});
 	}
 

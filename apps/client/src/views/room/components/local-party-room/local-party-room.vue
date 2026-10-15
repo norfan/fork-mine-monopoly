@@ -9,7 +9,9 @@ import FpErrorBoundary from "@src/components/utils/fp-error-boundary/index.vue";
 import { FPMessage } from "@mine-monopoly/ui";
 import router from "@src/router";
 import { useLoading, useRoomInfo } from "@src/store";
+import { useLocalParty } from "@src/store/local-party";
 import { getGameMapList } from "@src/utils/api/map";
+import { OFFLINE_MAPS, findOfflineMap, fetchOfflineMapFile, offlineMapToGameMapInDb } from "@src/utils/offline-maps";
 import { getDisplayValueByFormSchema } from "@src/utils";
 import { useMonopolyClient, type MonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
 import { useMapData } from "@src/store/game";
@@ -20,7 +22,7 @@ import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import RolePreviewer from "../shared/role-previewer.vue";
 import { vStagger } from "@src/directives";
 
-const MAX_PLAYERS = 6;
+const MAX_PLAYERS = 8;
 const roomInfoStore = useRoomInfo();
 const saveManager = new SaveManager();
 const socketClient: MonopolyClient = useMonopolyClient();
@@ -62,6 +64,8 @@ const canStart = computed(() => {
 const mapList = ref<GameMapInDb[]>([]);
 const mapSelectorVisible = ref(false);
 const tempMapSelectedId = ref<string[]>([]);
+/** 当前地图列表是否来自离线内置地图（无服务器官方列表时降级展示） */
+const isOfflineMapList = ref(false);
 const roleSelectorVisible = ref(false);
 const tempRoleSelectedId = ref<string[]>([]);
 const roleTargetUserId = ref("");
@@ -115,9 +119,19 @@ async function handleSelectMap() {
 		useLoading().showLoading("地图列表加载中...");
 		const { gameMapList } = await getGameMapList(1, 1000);
 		mapList.value = gameMapList;
+		isOfflineMapList.value = false;
 		mapSelectorVisible.value = true;
 	} catch {
-		FPMessage({ type: "error", message: "加载地图列表失败" });
+		// 离线降级：拉不到官方地图列表时，展示内置离线地图（若有），玩家点选即可加载。
+		if (OFFLINE_MAPS.length > 0) {
+			mapList.value = OFFLINE_MAPS.map(offlineMapToGameMapInDb);
+			isOfflineMapList.value = true;
+			mapSelectorVisible.value = true;
+			return;
+		}
+		// 无内置地图时引导玩家导入本地地图文件（.fpmap/.mmmap）。
+		FPMessage({ type: "info", message: "离线模式无法加载官方地图列表，请使用「导入本地地图」" });
+		void handleUploadMap();
 	} finally {
 		useLoading().hideLoading();
 	}
@@ -139,6 +153,18 @@ async function applyMapChange(mapInfo: Parameters<MonopolyClient["changeGameMap"
 async function handleChangeMap() {
 	const mapId = tempMapSelectedId.value[0];
 	if (!mapId || mapId === currentMap.value?.id) return;
+	// 离线内置地图：直接 fetch 本地 .fpmap 字节走 custom 加载链路
+	if (isOfflineMapList.value) {
+		const meta = findOfflineMap(mapId);
+		if (!meta) return;
+		try {
+			const data = await fetchOfflineMapFile(meta);
+			await applyMapChange({ from: "custom", data, fileName: meta.fileName }, "正在加载内置地图...");
+		} catch (error) {
+			FPMessage({ type: "error", message: `地图加载失败: ${error instanceof Error ? error.message : "未知错误"}` });
+		}
+		return;
+	}
 	await applyMapChange({ from: "server", data: mapId }, "地图加载中...");
 }
 
@@ -169,11 +195,20 @@ async function handleUploadMap() {
 		const input = document.createElement("input");
 		input.type = "file";
 		input.accept = ".fpmap,.mmmap";
+		input.style.position = "fixed";
+		input.style.left = "-9999px";
+		input.style.top = "-9999px";
 		input.onchange = async (event) => {
 			const file = (event.target as HTMLInputElement).files?.[0];
+			document.body.removeChild(input);
 			resolve(file ? { data: await file.arrayBuffer(), fileName: file.name } : null);
 		};
-		input.addEventListener("cancel", () => resolve(null));
+		input.addEventListener("cancel", () => {
+			document.body.removeChild(input);
+			resolve(null);
+		});
+		// 挂载到 DOM 再触发：部分 Web 宿主（含自动化与移动端 WebView）要求 file input 在文档中才能正确打开文件选择器。
+		document.body.appendChild(input);
 		input.click();
 	});
 	if (!selected) return;
@@ -195,6 +230,26 @@ function handleGameSettingChange(gameSetting: Record<string, { field: FormSchema
 	}
 	socketClient.changeGameSetting(result);
 	gameSettingFormVisible.value = false;
+}
+
+// ---- 桌游规则（实体档位/骰子模式/回合时长/钞票模式）----
+const localPartyStore = useLocalParty();
+const tabletop = computed(() => localPartyStore.tabletop);
+const tabletopVisible = ref(false);
+
+function handleTabletopMode(mode: "lite" | "board") {
+	localPartyStore.setTabletop({ mode });
+	// 极简档默认手机掷骰；桌游档保留当前选择
+	if (mode === "lite") localPartyStore.setTabletop({ diceMode: "phone" });
+}
+function handleTabletopDiceMode(diceMode: "phone" | "manual") {
+	localPartyStore.setTabletop({ diceMode });
+}
+function handleTabletopTurnTimeout(sec: number) {
+	localPartyStore.setTabletop({ turnTimeoutSec: Math.min(120, Math.max(30, sec)) });
+}
+function handleTabletopCashMode(cashMode: "digital" | "cash") {
+	localPartyStore.setTabletop({ cashMode });
 }
 
 async function checkSaves() {
@@ -235,6 +290,16 @@ function handleGameStart() {
 	if (canStart.value) {
 		FPMessage({ type: "warning", message: "请确认已选择地图，且本地玩家昵称均非空且不重复" });
 		return;
+	}
+	// 将桌游规则回合时长同步进地图参数（worker 按 turnTimeout 计时），档位/骰子/钞票模式由游戏界面直接读取 store。
+	const currentSetting: GameSetting = { ...roomInfoStore.gameSetting };
+	if (!currentSetting.turnTimeout || currentSetting.turnTimeout.value !== tabletop.value.turnTimeoutSec) {
+		currentSetting.turnTimeout = {
+			label: "回合倒计时(秒)",
+			value: tabletop.value.turnTimeoutSec as never,
+			displayValue: `${tabletop.value.turnTimeoutSec}`,
+		};
+		socketClient.changeGameSetting(currentSetting);
 	}
 	socketClient.startGame();
 }
@@ -281,6 +346,73 @@ function handleGameStart() {
 						<div class="game-setting-item" v-for="(setting, key) in gameSettingForShow" :key="key">
 							<span class="label">{{ setting.label }}:</span>
 							<span class="value">{{ setting.displayValue }}</span>
+						</div>
+					</div>
+
+					<div class="tabletop-setting">
+						<button class="game-setting-button btn-small" @click="tabletopVisible = !tabletopVisible">
+							桌游规则
+						</button>
+						<div v-if="tabletopVisible" class="tabletop-setting-panel">
+							<div class="tabletop-setting-row">
+								<span class="label">实体档位</span>
+								<span class="tabletop-options">
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.mode === 'lite' }"
+										@click="handleTabletopMode('lite')"
+									>极简（仅钞票）</button>
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.mode === 'board' }"
+										@click="handleTabletopMode('board')"
+									>桌游（钞票+棋盘）</button>
+								</span>
+							</div>
+							<div class="tabletop-setting-row">
+								<span class="label">骰子模式</span>
+								<span class="tabletop-options">
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.diceMode === 'phone' }"
+										@click="handleTabletopDiceMode('phone')"
+									>手机掷骰</button>
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.diceMode === 'manual' }"
+										:disabled="tabletop.mode === 'lite'"
+										@click="handleTabletopDiceMode('manual')"
+									>实体骰子</button>
+								</span>
+							</div>
+							<div class="tabletop-setting-row">
+								<span class="label">回合时长</span>
+								<span class="tabletop-options">
+									<button
+										v-for="sec in [30, 60, 90, 120]"
+										:key="sec"
+										class="tabletop-option"
+										:class="{ active: tabletop.turnTimeoutSec === sec }"
+										@click="handleTabletopTurnTimeout(sec)"
+									>{{ sec }}s</button>
+								</span>
+							</div>
+							<div class="tabletop-setting-row">
+								<span class="label">钞票模式</span>
+								<span class="tabletop-options">
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.cashMode === 'digital' }"
+										@click="handleTabletopCashMode('digital')"
+									>手机记账</button>
+									<button
+										class="tabletop-option"
+										:class="{ active: tabletop.cashMode === 'cash' }"
+										@click="handleTabletopCashMode('cash')"
+									>实体钞票双轨</button>
+								</span>
+							</div>
+							<p class="tabletop-setting-hint">桌游档下手机只当裁判与记账，公共状态由实体棋盘呈现；极简档下手机渲染数字棋盘。</p>
 						</div>
 					</div>
 
@@ -352,7 +484,7 @@ function handleGameStart() {
 			</template>
 		</FpDialog>
 		<FpDialog @submit="handleChangeMap" v-model:visible="mapSelectorVisible">
-			<template #title>选择地图 (点击想玩的地图然后确认)</template>
+			<template #title>{{ isOfflineMapList ? "选择离线内置地图 (点击想玩的地图然后确认)" : "选择地图 (点击想玩的地图然后确认)" }}</template>
 			<template #default>
 				<ItemSelector
 					:column="3"

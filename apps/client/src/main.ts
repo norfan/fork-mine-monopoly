@@ -113,6 +113,8 @@ import {
 	faTrashCan,
 	faEye,
 	faEyeSlash,
+	faChessBoard,
+	faHandHoldingDollar,
 } from "@fortawesome/free-solid-svg-icons";
 import { useDeviceStatus, useSettig } from "@src/store";
 import { isFullScreen as _isFullScreen, isLandscape as _isLandscape, isMobileDevice } from "@src/utils";
@@ -194,7 +196,9 @@ library.add(
 	faBoxOpen,
 	faTrashCan,
 	faEye,
-	faEyeSlash
+	faEyeSlash,
+	faChessBoard,
+	faHandHoldingDollar
 );
 async function bootstrap() {
 	await initPlatform();

@@ -1076,8 +1076,8 @@ export interface PlayerOperationResult {
 	/** 游戏初始化完成 */
 	[OperateType.GameInitFinished]: undefined;
 
-	/** 掷骰子 */
-	[OperateType.RollDice]: undefined;
+	/** 掷骰子（实体骰子模式下可携带手动点数） */
+	[OperateType.RollDice]: { manualValue?: number } | undefined;
 
 	/** 使用机会卡 */
 	[OperateType.UseChanceCard]: {

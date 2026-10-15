@@ -1,0 +1,72 @@
+{
+  "scope_lock_version": "3",
+  "schema_version": "6.0",
+  "source_text_sha256": "b3f382d8fe37ea0ad2ca7f28de7f9ffe63d73d4723871d30f8f3c20baa16e712",
+  "allowed_changes": [
+    {
+      "id": "ALLOW-8P",
+      "category": "parameter",
+      "description": "最多支持8个人一起游玩",
+      "source_quote": "最多支持8个人一起游玩",
+      "fields": [
+        "player.max_count"
+      ]
+    },
+    {
+      "id": "ALLOW-HOST-PHONE",
+      "category": "rule",
+      "description": "仅用一台手机软件当主控器",
+      "source_quote": "仅用一台手机软件当主控器",
+      "fields": [
+        "host.device"
+      ]
+    },
+    {
+      "id": "ALLOW-MINIMAL-PROPS",
+      "category": "rule",
+      "description": "实体清单可简化：仅保留钞票，棋盘/棋子/卡牌等数字化到手机",
+      "source_quote": "实体清单能不能简单一点，如果只有钞票，其他都在手机上可以么",
+      "fields": [
+        "physical.props.mode"
+      ]
+    },
+    {
+      "id": "ALLOW-OFFLINE",
+      "category": "rule",
+      "description": "改造为离线单机游玩，主控器不依赖在线联机",
+      "source_quote": "不需要在线联机游玩，就离线游玩",
+      "fields": [
+        "network.online_requirement"
+      ]
+    },
+    {
+      "id": "ALLOW-PHYSICAL",
+      "category": "content",
+      "description": "准备实体道具配合游玩",
+      "source_quote": "需要准备实体道具",
+      "fields": [
+        "physical.props"
+      ]
+    }
+  ],
+  "forbidden_changes": [
+    {
+      "id": "BAN-PLAYER-DEVICES",
+      "category": "rule",
+      "description": "不新增玩家自有设备接入，游玩围绕唯一主控手机进行",
+      "source_quote": "仅用一台手机软件当主控器，多个玩家围绕手机进行操作",
+      "fields": [
+        "player.devices"
+      ]
+    },
+    {
+      "id": "BAN-REALTIME-SYNC",
+      "category": "rule",
+      "description": "不引入玩家间实时同步通道，改造后主流程离线可玩",
+      "source_quote": "不需要在线联机游玩",
+      "fields": [
+        "network.realtime_sync"
+      ]
+    }
+  ]
+}

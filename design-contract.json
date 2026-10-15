@@ -1,0 +1,494 @@
+{
+  "schema_version": "6.0",
+  "task": {
+    "title": "MineMonopoly 离线桌游模式改造 PRD",
+    "source_text": "我要改造这个项目，不需要在线联机游玩，就离线游玩，仅用一台手机软件当主控器，多个玩家围绕手机进行操作（最多支持8个人一起游玩），同时需要准备实体道具，有没有什么方案？哪些需要作为实体道具？实体清单能不能简单一点，如果只有钞票，其他都在手机上可以么？",
+    "readiness_target": "draft",
+    "flags": {
+      "capacity": true,
+      "handoff": true,
+      "html": false,
+      "lifecycle": true,
+      "numbers": true,
+      "persistence": false,
+      "probability": false,
+      "production": true,
+      "resources": false,
+      "scope_constraints": true
+    }
+  },
+  "authority": {
+    "allowed_changes": [
+      {
+        "id": "ALLOW-OFFLINE",
+        "category": "rule",
+        "description": "改造为离线单机游玩，主控器不依赖在线联机",
+        "source_quote": "不需要在线联机游玩，就离线游玩",
+        "fields": ["network.online_requirement"]
+      },
+      {
+        "id": "ALLOW-HOST-PHONE",
+        "category": "rule",
+        "description": "仅用一台手机软件当主控器",
+        "source_quote": "仅用一台手机软件当主控器",
+        "fields": ["host.device"]
+      },
+      {
+        "id": "ALLOW-8P",
+        "category": "parameter",
+        "description": "最多支持8个人一起游玩",
+        "source_quote": "最多支持8个人一起游玩",
+        "fields": ["player.max_count"]
+      },
+      {
+        "id": "ALLOW-PHYSICAL",
+        "category": "content",
+        "description": "准备实体道具配合游玩",
+        "source_quote": "需要准备实体道具",
+        "fields": ["physical.props"]
+      },
+      {
+        "id": "ALLOW-MINIMAL-PROPS",
+        "category": "rule",
+        "description": "实体清单可简化：仅保留钞票，棋盘/棋子/卡牌等数字化到手机",
+        "source_quote": "实体清单能不能简单一点，如果只有钞票，其他都在手机上可以么",
+        "fields": ["physical.props.mode"]
+      }
+    ],
+    "forbidden_changes": [
+      {
+        "id": "BAN-PLAYER-DEVICES",
+        "category": "rule",
+        "description": "不新增玩家自有设备接入，游玩围绕唯一主控手机进行",
+        "source_quote": "仅用一台手机软件当主控器，多个玩家围绕手机进行操作",
+        "fields": ["player.devices"]
+      },
+      {
+        "id": "BAN-REALTIME-SYNC",
+        "category": "rule",
+        "description": "不引入玩家间实时同步通道，改造后主流程离线可玩",
+        "source_quote": "不需要在线联机游玩",
+        "fields": ["network.realtime_sync"]
+      }
+    ],
+    "proposed_changes": [
+      {
+        "id": "CHG-OFFLINE-MODE",
+        "category": "rule",
+        "description": "主流程去除在线依赖：游戏逻辑单机运行，手机作为主控器执行规则与记账",
+        "problem": "现有架构依赖中央服务器认证与玩家间同步，离线场景无法启动",
+        "scope_effect": "modify",
+        "responsibilities": ["program", "config", "qa"],
+        "tradeoff": "",
+        "authority_ids": ["ALLOW-OFFLINE"],
+        "fields": ["network.online_requirement"],
+        "priority": "P0"
+      },
+      {
+        "id": "CHG-HOST-ROLE",
+        "category": "rule",
+        "description": "手机角色从对等客户端变为主控器：驱动回合、裁决规则、权威记账",
+        "problem": "多人围绕单台手机操作需要统一的操作入口与权威状态",
+        "scope_effect": "modify",
+        "responsibilities": ["program", "ui", "qa"],
+        "tradeoff": "",
+        "authority_ids": ["ALLOW-HOST-PHONE"],
+        "fields": ["host.device"],
+        "priority": "P0"
+      },
+      {
+        "id": "CHG-8P",
+        "category": "parameter",
+        "description": "玩家席位上限设为 8 人",
+        "problem": "聚会场景需要明确的座位与人数容量",
+        "scope_effect": "modify",
+        "responsibilities": ["program", "config", "qa"],
+        "tradeoff": "",
+        "authority_ids": ["ALLOW-8P"],
+        "fields": ["player.max_count"],
+        "priority": "P0"
+      },
+      {
+        "id": "CHG-DUAL-MODE",
+        "category": "rule",
+        "description": "实体道具双档：极简档（仅钞票，数字棋盘）与桌游档（钞票+实体棋盘），开局设置选择",
+        "problem": "实体清单需可简化：只有钞票时手机必须渲染棋盘，其他状态数字化",
+        "scope_effect": "add",
+        "responsibilities": ["program", "ui", "content", "qa"],
+        "tradeoff": "桌游档的实体棋盘/卡牌为可选增强，不强制准备；两档共享同一规则与记账",
+        "authority_ids": ["ALLOW-MINIMAL-PROPS", "ALLOW-PHYSICAL", "ALLOW-HOST-PHONE"],
+        "fields": ["physical.props.mode"],
+        "priority": "P0"
+      }
+    ]
+  },
+  "assumptions": [
+    {
+      "id": "ASM-PHONE-OS",
+      "statement": "主控器手机以 Android 为主（现有 Capacitor 管线），iOS 作为后续适配目标",
+      "impact": "high",
+      "status": "test_value",
+      "validation": "由项目当前构建管线与目标设备确认"
+    },
+    {
+      "id": "ASM-KEEP-EDITOR",
+      "statement": "地图编辑器保留，用于导出可打印棋盘（桌游档）与地图数据",
+      "impact": "high",
+      "status": "confirmed",
+      "validation": "项目现状：map-editor 已有地图构建与导出能力"
+    },
+    {
+      "id": "ASM-RENDER-REUSE",
+      "statement": "极简档数字棋盘复用客户端 Three.js/PixiJS 渲染能力",
+      "impact": "high",
+      "status": "test_value",
+      "validation": "由客户端现有渲染管线确认"
+    }
+  ],
+  "rules": [
+    {
+      "id": "RULE-ROUND",
+      "title": "回合主控规则",
+      "definition": "手机主控器按座位顺序驱动回合；当前回合玩家操作手机完成掷骰与结算，其余玩家观察公共状态。",
+      "priority": "P0",
+      "parameter_ids": ["PAR-MAX-PLAYERS"],
+      "state_machine_ids": ["SM-GAME"],
+      "authority_ids": ["ALLOW-HOST-PHONE", "ALLOW-8P"],
+      "fields": ["host.device", "player.max_count"]
+    },
+    {
+      "id": "RULE-MONEY",
+      "title": "资产记账规则",
+      "definition": "手机主控器为资产权威记账端；玩家可选择实体钞票双轨（实体为演示、手机为权威）或纯手机记账，由开局设置开关决定。",
+      "priority": "P0",
+      "parameter_ids": ["PAR-START-MONEY"],
+      "authority_ids": ["ALLOW-PHYSICAL"],
+      "fields": ["physical.props"]
+    },
+    {
+      "id": "RULE-DICE",
+      "title": "骰子输入规则",
+      "definition": "默认手机内掷骰（防作弊、免道具）；可选实体骰子 + 手机确认结果，由开局设置开关决定。",
+      "priority": "P0",
+      "authority_ids": ["ALLOW-HOST-PHONE"],
+      "fields": ["host.device"]
+    },
+    {
+      "id": "RULE-MODE",
+      "title": "实体档位规则",
+      "definition": "开局设置二选一：极简档（仅钞票，手机渲染数字棋盘）或桌游档（钞票+实体棋盘）；两档共享同一规则、同一记账、同一回合交接，游戏中不可切换。",
+      "priority": "P0",
+      "parameter_ids": ["PAR-MODE-DEFAULT"],
+      "authority_ids": ["ALLOW-MINIMAL-PROPS", "ALLOW-PHYSICAL"],
+      "fields": ["physical.props.mode"]
+    },
+    {
+      "id": "RULE-REALITY",
+      "title": "实体一致性规则",
+      "definition": "桌游档：移动棋子、交付钞票、抽卡由当前回合玩家执行，手机提示并记录；极简档：仅钞票交付需人工，棋子与抽卡在手机上自动完成；不一致时以手机为权威并提示纠正。",
+      "priority": "P0",
+      "authority_ids": ["ALLOW-MINIMAL-PROPS", "ALLOW-PHYSICAL"],
+      "fields": ["physical.props.mode"]
+    }
+  ],
+  "parameters": [
+    {
+      "id": "PAR-MAX-PLAYERS",
+      "name": "max_players",
+      "value": 8,
+      "unit": "人",
+      "source": "user",
+      "source_quote": "最多支持8个人一起游玩",
+      "min": 2,
+      "max": 8,
+      "authority_ids": ["ALLOW-8P"],
+      "fields": ["player.max_count"]
+    },
+    {
+      "id": "PAR-START-MONEY",
+      "name": "start_money",
+      "value": 10000,
+      "unit": "游戏币",
+      "source": "design_initial",
+      "source_quote": "",
+      "min": 1000,
+      "max": 100000,
+      "authority_ids": ["ALLOW-PHYSICAL"],
+      "fields": ["physical.props"]
+    },
+    {
+      "id": "PAR-TURN-SECONDS",
+      "name": "turn_seconds",
+      "value": 60,
+      "unit": "秒",
+      "source": "design_initial",
+      "source_quote": "",
+      "min": 30,
+      "max": 120,
+      "authority_ids": ["ALLOW-HOST-PHONE"],
+      "fields": ["host.device"]
+    },
+    {
+      "id": "PAR-MAP-PRINT-DPI",
+      "name": "map_print_dpi",
+      "value": 300,
+      "unit": "dpi",
+      "source": "design_initial",
+      "source_quote": "",
+      "min": 150,
+      "max": 600,
+      "authority_ids": ["ALLOW-PHYSICAL"],
+      "fields": ["physical.props"]
+    },
+    {
+      "id": "PAR-MODE-DEFAULT",
+      "name": "default_mode",
+      "value": 1,
+      "unit": "档位",
+      "source": "design_initial",
+      "source_quote": "",
+      "min": 0,
+      "max": 1,
+      "authority_ids": ["ALLOW-MINIMAL-PROPS"],
+      "fields": ["physical.props.mode"]
+    }
+  ],
+  "numeric_requirements": [
+    {
+      "id": "NUMREQ-TURN-BUDGET",
+      "statement": "8 人局单轮总时长控制在聚会可接受范围（≤10 分钟）",
+      "source": "design_goal",
+      "assertion_ids": ["ASSERT-FULL-ROUND", "ASSERT-FULL-ROUND-MIN"]
+    },
+    {
+      "id": "NUMREQ-PRINT-SIZE",
+      "statement": "地图导出分辨率满足实体棋盘打印清晰度",
+      "source": "design_goal",
+      "assertion_ids": ["ASSERT-PRINT-RES"]
+    }
+  ],
+  "numerical_assertions": [
+    {
+      "id": "ASSERT-FULL-ROUND",
+      "scenario": "normal",
+      "expression": "max_players * turn_seconds",
+      "inputs": {"max_players": "PAR-MAX-PLAYERS", "turn_seconds": "PAR-TURN-SECONDS"},
+      "declared_value": 480,
+      "unit": "秒",
+      "tolerance": 0,
+      "acceptance": {"operator": "<=", "value": 600}
+    },
+    {
+      "id": "ASSERT-FULL-ROUND-MIN",
+      "scenario": "boundary",
+      "expression": "min(2, max_players) * min(30, turn_seconds)",
+      "inputs": {"max_players": "PAR-MAX-PLAYERS", "turn_seconds": "PAR-TURN-SECONDS"},
+      "declared_value": 60,
+      "unit": "秒",
+      "tolerance": 0,
+      "acceptance": {"operator": ">=", "value": 60}
+    },
+    {
+      "id": "ASSERT-PRINT-RES",
+      "scenario": "normal",
+      "expression": "map_print_dpi",
+      "inputs": {"map_print_dpi": "PAR-MAP-PRINT-DPI"},
+      "declared_value": 300,
+      "unit": "dpi",
+      "tolerance": 0,
+      "acceptance": {"operator": ">=", "value": 150}
+    }
+  ],
+  "state_machines": [
+    {
+      "id": "SM-GAME",
+      "initial_state": "SETUP",
+      "states": [
+        {"id": "SETUP", "entry": "选择地图、玩家人数与模式开关（档位/骰子/钞票）", "exit": "开始游戏"},
+        {"id": "PLAYER_TURN", "entry": "当前玩家接管手机", "exit": "掷骰完成"},
+        {"id": "RESOLVE", "entry": "按格位结算", "exit": "结算完成"},
+        {"id": "BANKRUPT_CHECK", "entry": "检查破产", "exit": "玩家数>=2 或终局"},
+        {"id": "GAME_OVER", "entry": "终局条件达成", "exit": "结算展示"}
+      ],
+      "event_order": ["setup_done", "dice_rolled", "resolved", "turn_end", "bankrupt", "game_end"],
+      "transitions": [
+        {
+          "id": "TR-START",
+          "from": "SETUP",
+          "event": "setup_done",
+          "to": "PLAYER_TURN",
+          "effect": "进入座位 1 玩家回合",
+          "repeat_policy": "每局一次",
+          "cleanup": "锁定设置项并记录开局快照"
+        },
+        {
+          "id": "TR-DICE",
+          "from": "PLAYER_TURN",
+          "event": "dice_rolled",
+          "to": "RESOLVE",
+          "effect": "移动棋子并结算格位",
+          "repeat_policy": "每回合一次，连双再掷由规则控制",
+          "cleanup": "清空掷骰态并释放当前玩家控制权"
+        },
+        {
+          "id": "TR-NEXT",
+          "from": "RESOLVE",
+          "event": "turn_end",
+          "to": "PLAYER_TURN",
+          "effect": "座位+1 进入下一玩家回合",
+          "repeat_policy": "按座位循环",
+          "cleanup": "移交控制权给下一座位玩家"
+        },
+        {
+          "id": "TR-BANKRUPT",
+          "from": "RESOLVE",
+          "event": "bankrupt",
+          "to": "BANKRUPT_CHECK",
+          "effect": "判定剩余玩家数量",
+          "repeat_policy": "每次破产结算一次",
+          "cleanup": "该玩家资产归零并从座位循环移除"
+        },
+        {
+          "id": "TR-END",
+          "from": "BANKRUPT_CHECK",
+          "event": "game_end",
+          "to": "GAME_OVER",
+          "effect": "展示排名与统计",
+          "repeat_policy": "终局一次",
+          "cleanup": "冻结资产并展示结算"
+        }
+      ]
+    }
+  ],
+  "ledgers": {
+    "probability_pools": [],
+    "resources": [],
+    "capacity": [
+      {
+        "id": "CAP-P0",
+        "available": 18,
+        "unit": "人日",
+        "tasks": [
+          {"id": "FEATURE-OFFLINE", "description": "离线单机模式改造与主控器架构", "amount": 4, "priority": "P0", "kind": "feature"},
+          {"id": "FEATURE-TURN-UI", "description": "回合驱动 UI 与多玩家接管交互", "amount": 3, "priority": "P0", "kind": "feature"},
+          {"id": "FEATURE-BOARD", "description": "数字棋盘渲染（极简档）", "amount": 3, "priority": "P0", "kind": "feature"},
+          {"id": "FEATURE-PRINT", "description": "棋盘导出打印（桌游档）", "amount": 2, "priority": "P0", "kind": "feature"},
+          {"id": "INTEGRATION", "description": "Capacitor 安卓打包与接线验证", "amount": 2, "priority": "P0", "kind": "integration"},
+          {"id": "DATA", "description": "道具配置与规则参数落地", "amount": 2, "priority": "P0", "kind": "data"},
+          {"id": "QA", "description": "8 人局回归与修复", "amount": 2, "priority": "P0", "kind": "qa"}
+        ]
+      }
+    ]
+  },
+  "tests": [
+    {
+      "id": "TEST-8P",
+      "type": "normal",
+      "rule_ids": ["RULE-ROUND"],
+      "precondition": "8 名玩家开局",
+      "action": "完整运行一个回合循环",
+      "expected": "座位顺序正确、每名玩家完成掷骰与结算、手机无卡顿",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-OFFLINE",
+      "type": "recovery",
+      "rule_ids": ["RULE-ROUND"],
+      "precondition": "飞行模式开启",
+      "action": "启动应用并完整游玩",
+      "expected": "无需任何网络请求，全程可玩",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-BANKRUPT",
+      "type": "boundary",
+      "rule_ids": ["RULE-MONEY"],
+      "precondition": "玩家资产低于 0 且无法抵押",
+      "action": "结算破产",
+      "expected": "资产归零、退出游戏、剩余玩家继续",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-DICE-MANUAL",
+      "type": "normal",
+      "rule_ids": ["RULE-DICE"],
+      "precondition": "开启实体骰子模式",
+      "action": "玩家输入骰子点数",
+      "expected": "手机按输入点数结算且不接受越界值",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-MODE-LITE",
+      "type": "normal",
+      "rule_ids": ["RULE-MODE"],
+      "precondition": "极简档开局（仅钞票）",
+      "action": "完整运行一局",
+      "expected": "数字棋盘状态正确、规则与记账一致",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-MODE-BOARD",
+      "type": "normal",
+      "rule_ids": ["RULE-MODE"],
+      "precondition": "桌游档开局（钞票+棋盘）",
+      "action": "完整运行一局",
+      "expected": "实体棋盘提示正确、规则与记账一致",
+      "status": "planned"
+    },
+    {
+      "id": "TEST-REALITY-MISMATCH",
+      "type": "boundary",
+      "rule_ids": ["RULE-REALITY"],
+      "precondition": "实体状态与手机记录不一致",
+      "action": "玩家指出差异",
+      "expected": "以手机为权威提示纠正并继续",
+      "status": "planned"
+    }
+  ],
+  "production_risks": [
+    {
+      "id": "RISK-PRINT",
+      "surface": "content_pipeline",
+      "trigger": "地图导出打印分辨率不足",
+      "impact": "实体棋盘模糊不可用",
+      "detection": "打印 A4 样张验证清晰度",
+      "mitigation": "导出管线按 PAR-MAP-PRINT-DPI 渲染，校验 ASSERT-PRINT-RES",
+      "fallback": "提供 SVG/PDF 矢量导出供印刷店制作",
+      "owner": "program and content"
+    },
+    {
+      "id": "RISK-UI-8P",
+      "surface": "ui_input",
+      "trigger": "8 人轮流操作单台手机",
+      "impact": "误触、他人资产信息泄露、回合混淆",
+      "detection": "8 人实测回合流转",
+      "mitigation": "回合边界锁定、当前玩家确认、隐私遮罩",
+      "fallback": "开启实体钞票双轨模式降低手机暴露面",
+      "owner": "program and ui"
+    },
+    {
+      "id": "RISK-DIGITAL-BOARD",
+      "surface": "performance",
+      "trigger": "数字棋盘在低端安卓机渲染卡顿",
+      "impact": "极简档体验差",
+      "detection": "低端机 60fps 预算实测",
+      "mitigation": "降级为静态 2D 渲染",
+      "fallback": "提示用户切到桌游档",
+      "owner": "program"
+    }
+  ],
+  "claims": [
+    {
+      "id": "CLAIM-ROUND",
+      "text": "8 人单轮总时长 ≤ 10 分钟（默认每回合 60 秒）。",
+      "strength": "calculated",
+      "evidence_ids": ["ASSERT-FULL-ROUND"]
+    },
+    {
+      "id": "CLAIM-PRINT",
+      "text": "300dpi 导出满足 A2/A3 实体棋盘打印清晰度。",
+      "strength": "calculated",
+      "evidence_ids": ["ASSERT-PRINT-RES"]
+    }
+  ]
+}

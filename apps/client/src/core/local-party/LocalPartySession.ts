@@ -15,8 +15,9 @@ import type { SaveRecord } from "@src/core/save";
 import { useLocalParty } from "@src/store/local-party";
 import { useUserInfo } from "@src/store";
 import { useMapData } from "@src/store/game";
+import useEventBus from "@src/utils/event-bus";
 
-const MAX_PLAYERS = 6;
+const MAX_PLAYERS = 8;
 const BROADCAST_TYPES = new Set<SocketMsgType>([
 	SocketMsgType.RoomInfo,
 	SocketMsgType.MsgNotify,
@@ -73,6 +74,9 @@ export class LocalPartySession {
 	private readonly connections = new Map<string, DataConnection>();
 	private readonly recentBroadcastKeys = new Map<string, number>();
 	private readonly players = new Map<string, LocalPartyPlayer>();
+
+	/** 各玩家最近一次 GameData 全量同步中的余额，用于双轨现金模式做余额 diff 触发"已支付"确认 */
+	private readonly lastMoneyByPlayerId: Record<string, number> = {};
 	/** 等待交接确认后投递的交互弹窗消息队列。 */
 	private readonly pendingInteractions: Array<{ recipientId: string; message: ServerSocketMessage }> = [];
 	/** 上一帧 handoffPlayerId，用于通过 store 订阅识别交接确认。 */
@@ -336,6 +340,7 @@ export class LocalPartySession {
 		const message = this.parseRoomMessage(payload);
 		if (!message) return;
 		this.syncTurn(message, recipientId);
+		this.trackCashEvents(message);
 		if (message.type === SocketMsgType.ConfirmDialog && this.isCustomMapRiskPrompt(message)) {
 			this.room.emitOperation(recipientId, OperateType.ConfirmDialogResult, { id: recipientId, confirm: true });
 			return;
@@ -380,8 +385,35 @@ export class LocalPartySession {
 		};
 	}
 
-	private syncTurn(message: ServerSocketMessage, _recipientId: string) {
-		let playerId = "";
+	/**
+	 * 双轨现金模式（cash）下，worker 的 player.cost/gain 只改余额、不广播 CostMoney/GainMoney（遗留协议无发送方）。
+	 * 本地派对通过 GameData 全量同步做余额 diff，把真人玩家的现金变动转成统一现金事件，供"实体钞票·确认支付"浮层使用。
+	 */
+	private trackCashEvents(message: ServerSocketMessage): void {
+		if (message.type !== SocketMsgType.GameData) return;
+		const data = message.data as { players?: Array<{ id: string; name?: string; user?: { username?: string }; money: number }> } | undefined;
+		const players = data?.players;
+		if (!players) return;
+		for (const player of players) {
+			const prev = this.lastMoneyByPlayerId[player.id];
+			if (prev === undefined) {
+				this.lastMoneyByPlayerId[player.id] = player.money;
+				continue;
+			}
+			const diff = player.money - prev;
+			if (diff === 0) continue;
+			this.lastMoneyByPlayerId[player.id] = player.money;
+			useEventBus().emit("game:cash-event", {
+				playerId: player.id,
+				playerName: player.user?.username || player.name || "",
+				amount: Math.abs(diff),
+				counterparty: "银行",
+				isCost: diff < 0,
+			});
+		}
+	}
+
+	private syncTurn(message: ServerSocketMessage, _recipientId: string) {		let playerId = "";
 		let forceHandoff = false;
 		if (message.type === SocketMsgType.GameInit) {
 			playerId = (message.data as any)?.currentPlayerIdInRound || "";
@@ -468,7 +500,7 @@ export class LocalPartySession {
 	}
 
 	private getNextColor(): string {
-		const colors = ["#4f83ff", "#00a6a6", "#ff8a3d", "#e85d75", "#7c6cff", "#22c55e"];
+		const colors = ["#4f83ff", "#00a6a6", "#ff8a3d", "#e85d75", "#7c6cff", "#22c55e", "#eab308", "#06b6d4"];
 		return colors[this.players.size % colors.length];
 	}
 	private toUser(player: LocalPartyPlayer): User {

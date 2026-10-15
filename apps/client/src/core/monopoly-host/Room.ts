@@ -123,7 +123,7 @@ export class Room {
 	private static readonly HEARTBEAT_NORMAL_TIMEOUT = 15000;
 	private static readonly HEARTBEAT_BUSY_TIMEOUT = 60000;
 	private static readonly INIT_TIMEOUT = 65000;
-	private static readonly MAX_ROOM_PLAYERS = 6;
+	private static readonly MAX_ROOM_PLAYERS = 8;
 	private static readonly AI_COLOR_PALETTE = [
 		"#4f83ff",
 		"#00a6a6",
@@ -2543,7 +2543,8 @@ export class Room {
 		this.gameProcessWorker.postMessage(<WorkerCommMsg>{
 			type: WorkerCommType.LoadGameInfo,
 			data: {
-				setting: this.gameSetting,
+				// setting 来自 Pinia 响应式状态，直接引用无法通过结构化克隆（DataCloneError），深拷贝后再发送
+				setting: JSON.parse(JSON.stringify(this.gameSetting)),
 				mapInfo: mapData,
 				userList: this.getGameParticipants(),
 				roomOwnerId: this.ownerId,
@@ -2577,7 +2578,8 @@ export class Room {
 
 		try {
 			const binding = this.getAIPlayerDecisionBinding(data.request.playerId);
-			const remoteConfig = this.getResolvedAIRemoteConfig(data.request.playerId);
+			// 本地派对（离线）模式强制使用本地决策规则：远程 LLM 需要联网，离线时直接降级，避免请求失败阻塞回合。
+			const remoteConfig = this.localParty ? undefined : this.getResolvedAIRemoteConfig(data.request.playerId);
 			const provider = remoteConfig
 				? createRemoteAIDecisionProvider(remoteConfig)
 				: createAIDecisionProviderFromConfig(this.aiDecisionConfig);

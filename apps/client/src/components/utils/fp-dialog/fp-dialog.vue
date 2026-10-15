@@ -17,6 +17,7 @@ const props = withDefaults(
 		submitDisable?: boolean;
 		hiddenFooter?: boolean;
 		style?: CSSProperties | string; // 兼容字符串和对象写法
+		wrapperStyle?: CSSProperties | string; // 应用到最外层 .fp-dialog 的样式（如 z-index 置顶）
 		appendToBody?: boolean; // 可选：是否传送到 body
 		confirmText?: string; // 确认按钮文本
 		cancelText?: string; // 取消按钮文本（如果提供，则显示取消按钮）
@@ -67,20 +68,25 @@ function onEnter(el: Element, done: () => void) {
 }
 
 function onLeave(el: Element, done: () => void) {
-	const tl = gsap.timeline({
-		onComplete: () => {
-			gsap.set(el, { clearProps: "willChange" });
-			done();
-		},
-	});
+	// rAF 在页面后台/路由过渡期间会暂停，gsap onComplete 可能不触发导致 DOM 残留。
+	// 用幂等 finish + 超时兜底保证 Transition 一定能完成并移除节点。
+	let finished = false;
+	const finish = () => {
+		if (finished) return;
+		finished = true;
+		gsap.set(el, { clearProps: "willChange" });
+		done();
+	};
+	const tl = gsap.timeline({ onComplete: finish });
 	tl.to(el, { opacity: 0, duration: 0.08, willChange: "opacity" });
+	window.setTimeout(finish, 800);
 }
 </script>
 
 <template>
 	<Teleport to="body" :disabled="!appendToBody">
 		<Transition :css="false" @enter="onEnter" @leave="onLeave">
-			<div class="fp-dialog" v-if="visible">
+			<div class="fp-dialog" v-if="visible" :style="props.wrapperStyle">
 				<div class="fp-dialog-modal" @click="closeDialog"></div>
 
 				<div class="fp-dialog-main" :style="props.style" v-stagger.sound="50">

@@ -428,6 +428,13 @@ async function handleMessage(data: WorkerCommMsg) {
 		case WorkerCommType.EmitOperation:
 			{
 				const { userId, operateType, data: _data, metadata } = data.data;
+				// 实体骰子模式：玩家输入总点数(2-12)，拆分注入骰子 prophecy，roll 时优先消费。
+				if (operateType === OperateType.RollDice && _data && typeof _data === "object" && "manualValue" in _data) {
+					const manualValue = (_data as { manualValue?: number }).manualValue;
+					if (typeof manualValue === "number" && manualValue >= 2 && manualValue <= 12) {
+						gameProcess?.applyManualDiceValue(userId, manualValue);
+					}
+				}
 				operationListener.emit(userId, operateType, _data);
 				if (operateType === OperateType.GameInitFinished) gameProcess?.handleInitSignal(userId, metadata);
 
@@ -569,6 +576,28 @@ export class GameProcess implements IGameProcess {
 	public properties: Map<string, Property> = new Map();
 	public chanceCardInfos: Map<string, ChanceCardInfo> = new Map();
 	public mapItems: Map<string, MapItem> = new Map();
+
+	/**
+	 * 实体骰子模式：把玩家输入的总点数(2-12)按骰子数量拆分，
+	 * 写入对应玩家骰子的 prophecy，下次 roll() 时优先消费该值。
+	 */
+	public applyManualDiceValue(playerId: string, total: number): void {
+		const player = this.players.get(playerId);
+		if (!player) return;
+		const dices = player.dices;
+		if (!Array.isArray(dices) || dices.length === 0) return;
+		// 总点数分配到每个骰子：优先保证各骰子取 1-6 的合法组合。
+		// 双骰场景：第一个骰子取 max(1, total-6)，其余均摊剩余；多于两个时尽力拆分。
+		const per = dices.length === 1 ? total : Math.min(6, Math.max(1, Math.floor(total / dices.length)));
+		let remaining = total;
+		for (let i = 0; i < dices.length; i++) {
+			const isLast = i === dices.length - 1;
+			const value = isLast ? remaining : Math.min(per, remaining - (dices.length - 1 - i));
+			const clamped = Math.max(1, Math.min(6, value));
+			dices[i].setProphecy?.(clamped);
+			remaining -= clamped;
+		}
+	}
 	public mapEvents: Map<string, RuntimeMapEvent> = new Map();
 	private mapPathAdjacency: MapPathAdjacency;
 	private enabledPathIds: Set<string>;

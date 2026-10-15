@@ -5,7 +5,10 @@ import { computed } from "vue";
 
 const utilStore = useUtil();
 
+const isLocal = computed(() => utilStore.connectionMode === "local");
+
 const modeText = computed(() => {
+	if (isLocal.value) return "本地";
 	switch (utilStore.connectionMode) {
 		case "p2p": return "P2P";
 		case "relay": return "中继";
@@ -14,6 +17,7 @@ const modeText = computed(() => {
 });
 
 const modeColor = computed(() => {
+	if (isLocal.value) return "var(--fp-color-text-success)";
 	switch (utilStore.connectionMode) {
 		case "p2p": return "var(--fp-color-text-success)";
 		case "relay": return "var(--fp-color-text-warning)";
@@ -22,6 +26,9 @@ const modeColor = computed(() => {
 });
 
 const modeTitle = computed(() => {
+	if (isLocal.value) {
+		return "本地派对：单机离线模式，多人在同一台设备上轮流操作";
+	}
 	const lines = [
 		`链路模式：${utilStore.connectionMode === "relay" ? "TURN 中继" : utilStore.connectionMode === "p2p" ? "P2P 直连" : "连接中"}`,
 		`连接策略：${utilStore.connectionPolicy === "relay" ? "强制 TURN 中继" : "优先 P2P 直连"}`,
@@ -37,6 +44,7 @@ const modeTitle = computed(() => {
 });
 
 const detailText = computed(() => {
+	if (isLocal.value) return "离线";
 	if (utilStore.connectionReconnectAttempt > 0) {
 		return `重连 ${utilStore.connectionReconnectAttempt}`;
 	}

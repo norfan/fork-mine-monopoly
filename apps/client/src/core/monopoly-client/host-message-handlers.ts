@@ -528,12 +528,28 @@ const handleGainMoney: ServerMessageHandler<SocketMsgType.GainMoney> = (msg) => 
 	if (!msg.data) return;
 	const { player, money, source } = msg.data;
 	useEventBus().emit(GameEventType.GainMoney + player.id, player, money, source);
+	// 统一现金事件：供本地派对双轨（cash）模式的"已支付"确认浮层使用
+	useEventBus().emit("game:cash-event", {
+		playerId: player.id,
+		playerName: player.user.username,
+		amount: money,
+		counterparty: typeof source === "string" ? source : source?.user.username,
+		isCost: false,
+	});
 };
 
 const handleCostMoney: ServerMessageHandler<SocketMsgType.CostMoney> = (msg) => {
 	if (!msg.data) return;
 	const { player, money, target } = msg.data;
 	useEventBus().emit(GameEventType.CostMoney + player.id, player, money, target);
+	// 统一现金事件：供本地派对双轨（cash）模式的"已支付"确认浮层使用
+	useEventBus().emit("game:cash-event", {
+		playerId: player.id,
+		playerName: player.user.username,
+		amount: money,
+		counterparty: typeof target === "string" ? target : target?.user.username,
+		isCost: true,
+	});
 };
 
 const handleGameData: ServerMessageHandler<SocketMsgType.GameData> = (msg) => {

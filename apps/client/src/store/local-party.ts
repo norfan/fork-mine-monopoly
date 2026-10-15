@@ -19,6 +19,13 @@ export const useLocalParty = defineStore("local-party", {
 		hasPendingInteraction: false,
 		/** 进行中的交互弹窗：timeoutId -> 弹窗目标玩家 ID。 */
 		dialogTimeoutOwners: {} as Record<string, string>,
+		/** 桌游规则配置：实体档位（lite=极简仅钞票 / board=桌游钞票+棋盘）、骰子模式（phone=手机掷骰 / manual=实体骰子）、回合时长（秒）、钞票模式（digital=纯手机记账 / cash=实体钞票双轨）。 */
+		tabletop: {
+			mode: "board" as "lite" | "board",
+			diceMode: "phone" as "phone" | "manual",
+			turnTimeoutSec: 60,
+			cashMode: "digital" as "digital" | "cash",
+		},
 	}),
 	getters: {
 		activePlayerName: (state) => {
@@ -37,6 +44,9 @@ export const useLocalParty = defineStore("local-party", {
 			this.handoffVisible = false;
 			this.hasPendingInteraction = false;
 			this.dialogTimeoutOwners = {};
+		},
+		setTabletop(config: Partial<{ mode: "lite" | "board"; diceMode: "phone" | "manual"; turnTimeoutSec: number; cashMode: "digital" | "cash" }>) {
+			this.tabletop = { ...this.tabletop, ...config };
 		},
 		setPlayers(players: LocalPartyPlayer[]) {
 			this.players = players;
@@ -82,6 +92,12 @@ export const useLocalParty = defineStore("local-party", {
 			this.handoffVisible = false;
 			this.hasPendingInteraction = false;
 			this.dialogTimeoutOwners = {};
+			this.tabletop = {
+				mode: "board",
+				diceMode: "phone",
+				turnTimeoutSec: 60,
+				cashMode: "digital",
+			};
 		},
 	},
 });
