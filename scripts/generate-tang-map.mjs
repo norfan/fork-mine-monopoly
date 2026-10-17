@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import protobuf from "protobufjs";
 
 import { buildTangModels } from "./lib/tang-models.mjs";
+import { buildDistrictHouses } from "./lib/tang-houses.mjs";
+import { buildRoleAvatars } from "./lib/make-role-avatars.mjs";
 import { buildTangMapData } from "./lib/tang-map-data.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,10 +19,11 @@ const OUT_FPMAP = join(PROJECT_ROOT, "apps/client/public/offline-maps/tang-dynas
 const OUT_JSON = join(PROJECT_ROOT, "test-assets/tang-map.json");
 
 function main() {
-	// 1. 模型与封面、背景
-	const models = buildTangModels();
+	// 1. 模型与图片资产
+	const models = [...buildTangModels(), ...buildDistrictHouses()];
 	const cover = readFileSync(join(PROJECT_ROOT, "apps/client/public/offline-maps/cover-tang.png"));
 	const background = readFileSync(join(PROJECT_ROOT, "apps/client/public/offline-maps/background-tang.png"));
+	const avatars = buildRoleAvatars();
 
 	// 2. 地图数据
 	const mapData = buildTangMapData();
@@ -35,6 +38,7 @@ function main() {
 		imageFiles: [
 			{ id: "image-tang-cover", name: "cover-tang.png", filetype: "png", content: cover },
 			{ id: "image-tang-bg", name: "background-tang.png", filetype: "png", content: background },
+			...avatars.map((a) => ({ id: a.id, name: a.name, filetype: a.filetype, content: a.content })),
 		],
 		serverMapId: "",
 	});
@@ -61,16 +65,26 @@ function main() {
 	for (const r of roundTrip.roles) {
 		if (!decodedImageIds.has(r.imageId)) throw new Error(`回读校验失败：角色 ${r.id} 图片未打包`);
 	}
+	for (const item of roundTrip.mapItems) {
+		for (const modelId of item.property?.buildingModelIdList ?? []) {
+			if (!decodedModelIds.has(modelId)) throw new Error(`回读校验失败：建造模型 ${modelId} 未打包`);
+		}
+	}
+	// 角色头像唯一性
+	const roleImageIds = roundTrip.roles.map((r) => r.imageId);
+	if (new Set(roleImageIds).size !== roleImageIds.length) throw new Error("回读校验失败：角色头像存在重复");
 
 	// 6. 汇总
 	const fileNames = decoded.modelFiles.map((m) => m.name).join(", ");
+	const houseCount = decoded.modelFiles.filter((m) => m.id.startsWith("house-")).length;
+	const actCount = decoded.modelFiles.filter((m) => m.id.startsWith("act-")).length;
 	console.log("=== 盛世大唐地图生成完成 ===");
 	console.log(`地图: ${roundTrip.info.name} (${roundTrip.id})`);
 	console.log(`格子: ${roundTrip.mapItems.length}（外环 40 + 地产展示 24 + 装饰 ${roundTrip.mapItems.length - 64}）`);
-	console.log(`地产: 8 道 × 3 格 | 特殊格: 机会 ${roundTrip.mapEvents.filter((e) => e.id === "evt-chance").length ? 6 : 0} / 命运 4 / 赋税 2`);
-	console.log(`机会卡: ${roundTrip.chanceCards.length} | 角色: ${roundTrip.roles.length} | 路径: ${roundTrip.mapPaths.length}`);
-	console.log(`模型: ${decoded.modelFiles.length} 个 GLB (${fileNames})`);
-	console.log(`封面: ${decoded.imageFiles.length} 张 (${decoded.imageFiles[0].name})`);
+	console.log(`地产: 8 道 × 3 格 | 特殊格: 机会 6 / 命运 4 / 赋税 2`);
+	console.log(`机会卡: ${roundTrip.chanceCards.length} | 角色: ${roundTrip.roles.length}（专属头像 ${roundTrip.roles.length} 张） | 路径: ${roundTrip.mapPaths.length}`);
+	console.log(`模型: ${decoded.modelFiles.length} 个 GLB（通用 ${decoded.modelFiles.length - houseCount - actCount} + 八道建筑 ${houseCount} + 街头小景 ${actCount}）`);
+	console.log(`图片: ${decoded.imageFiles.length} 张（封面 / 背景 / 角色头像 ${avatars.length}）`);
 	console.log(`fpmap: ${OUT_FPMAP} (${(buffer.length / 1024).toFixed(1)} KB)`);
 	console.log(`JSON: ${OUT_JSON}`);
 }

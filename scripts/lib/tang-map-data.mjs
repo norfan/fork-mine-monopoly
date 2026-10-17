@@ -136,7 +136,6 @@ const ROLES = [
 	{ id: "role-guozeyi", name: "郭子仪", color: "#b03a2e", description: "名将，再造唐室。" },
 	{ id: "role-gongsun", name: "公孙大娘", color: "#3a7d6e", description: "剑器舞冠绝一时。" },
 ];
-
 /** 组装完整地图 JSON（jsonData） */
 export function buildTangMapData() {
 	const mapItemTypes = [];
@@ -160,8 +159,8 @@ export function buildTangMapData() {
 	addType("t-fate", "命运·风云", "tang-lantern", "#8e6bb8");
 	addType("t-tax", "赋税·户部", "tang-wall", "#8a5a3b");
 	for (const g of GROUPS) {
-		addType(`t-act-${g.key}`, `行动格_${g.name}`, "tang-shop", g.color);
-		addType(`t-disp-${g.key}`, `地产展示_${g.name}`, "tang-pagoda", g.color);
+		addType(`t-act-${g.key}`, `行动格_${g.name}`, `act-${g.key}`, g.color);
+		addType(`t-disp-${g.key}`, `地产展示_${g.name}`, `house-${g.key}-0`, g.color);
 	}
 	for (const [deco, name, model, color] of [
 		["t-deco-palace", "装饰_大明宫", "tang-palace", "#d4af37"],
@@ -218,7 +217,8 @@ export function buildTangMapData() {
 	}
 
 	// ---- 24 个地产展示格（property 载体） ----
-	const buildingModels = ["tang-plot", "tang-shop", "tang-louge", "tang-palace", "tang-pagoda"];
+	// 每道独立的五级建造序列（level 0..4）；房主染色作用于命名 color-wall 的主墙
+	const districtBuildModels = (key) => [0, 1, 2, 3, 4].map((lv) => `house-${key}-${lv}`);
 	GROUPS.forEach((g, gi) => {
 		GROUP_CELLS[gi].forEach((cell, n) => {
 			const { x, y } = holderPos(cell);
@@ -239,7 +239,7 @@ export function buildTangMapData() {
 					level: 0,
 					maxLevel: 4,
 					costList: costListOf(g.sell),
-					buildingModelIdList: buildingModels,
+					buildingModelIdList: districtBuildModels(g.key),
 					custom: {
 						effectCode: '((property: IProperty, gameProcess: IGameProcess) => { property.commandBus.setHandler("property.arrived", async (payload: any) => { await tangArrive(gameProcess, property, payload.arrivedPlayer); return payload; }); });',
 						description: `${g.name}地皮：到达后可购置、建造与收取租银`,
@@ -380,7 +380,7 @@ export function buildTangMapData() {
 		name: r.name,
 		description: r.description,
 		color: r.color,
-		imageId: "image-tang-cover",
+		imageId: `image-role-${r.id.replace(/^role-/, "")}`,
 		initCode: "((player: IPlayer, gameProcess: IGameProcess) => {});",
 	}));
 
@@ -416,7 +416,7 @@ export function buildTangMapData() {
 		inUse: false,
 		mapEvents,
 		phases: getInitPhase(),
-		buildingModelIdList: buildingModels,
+		buildingModelIdList: GROUPS[0] ? districtBuildModels(GROUPS[0].key) : [],
 		uiTemplates: [],
 		modifierTemplates: [],
 		customUIs: [],

@@ -74,6 +74,9 @@ export function buildGlb(parts) {
 		nodes: parts.map((p, i) => {
 			const node = { mesh: i, translation: p.c, scale: p.s };
 			if (p.rotY) node.rotation = quatFromAxisY(p.rotY);
+			// 节点名会经 GLTFLoader 写入 userData.name；
+			// GameRenderer 对名称含 "color" 的网格做房主染色（buildPropertyModel）
+			if (p.name) node.name = p.name;
 			return node;
 		}),
 		meshes: parts.map((_, i) => ({
