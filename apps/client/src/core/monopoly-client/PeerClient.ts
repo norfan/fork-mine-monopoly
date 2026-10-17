@@ -1,5 +1,5 @@
 import { useLoading, useUtil } from "@src/store";
-import { __ICE_SERVER_PATH__, __ICE_USE_PREFIX__, __FATPAPER_HOST__ } from "@src/../global.config";
+import { getIceHost, getIcePath, getIceUsePrefix } from "@src/utils/server-config";
 import Peer, { DataConnection } from "peerjs";
 import { connectionDiagnostics } from "@src/utils/connection-diagnostics";
 
@@ -76,9 +76,13 @@ export class PeerClient {
 	public static async create(host: string, port: number, rtcConfig: RTCConfiguration) {
 		connectionDiagnostics.stageStart("SignalingConnect");
 		connectionDiagnostics.setIceServers(rtcConfig.iceServers || []);
+		// 信令地址运行时读取（支持登录页切换服务器地址，见 server-config.ts）
+		const iceUsePrefix = getIceUsePrefix();
+		const iceHost = getIceHost();
+		const icePath = getIcePath();
 		connectionDiagnostics.setSignalingInfo(
-			__ICE_USE_PREFIX__ ? `${__FATPAPER_HOST__}${__ICE_SERVER_PATH__}` : `${host}:${port}`,
-			!!__ICE_USE_PREFIX__,
+			iceUsePrefix ? `${iceHost}${icePath}` : `${host}:${port}`,
+			!!iceUsePrefix,
 		);
 		connectionDiagnostics.captureNetworkInfo();
 		// 检测本地网络接口（不阻塞主流程）
@@ -86,10 +90,10 @@ export class PeerClient {
 
 		// 向 PeerJS 信令服务器获取自己的 peerId
 		const peer = await new Promise<Peer>((resolve, reject) => {
-			const peerOptions = __ICE_USE_PREFIX__
+			const peerOptions = iceUsePrefix
 				? {
-						host: __FATPAPER_HOST__,
-						path: __ICE_SERVER_PATH__,
+						host: iceHost,
+						path: icePath,
 						secure: true,
 						debug: 0,
 						config: rtcConfig,
@@ -97,10 +101,10 @@ export class PeerClient {
 				: { host, port, debug: 0, config: rtcConfig };
 
 			connectionDiagnostics.logPeerEvent("Peer.constructor", JSON.stringify({
-				mode: __ICE_USE_PREFIX__ ? "prefix" : "port",
-				host: __ICE_USE_PREFIX__ ? __FATPAPER_HOST__ : host,
-				path: __ICE_USE_PREFIX__ ? __ICE_SERVER_PATH__ : undefined,
-				port: __ICE_USE_PREFIX__ ? undefined : port,
+				mode: iceUsePrefix ? "prefix" : "port",
+				host: iceUsePrefix ? iceHost : host,
+				path: iceUsePrefix ? icePath : undefined,
+				port: iceUsePrefix ? undefined : port,
 				iceTransportPolicy: rtcConfig.iceTransportPolicy || "all",
 			}));
 

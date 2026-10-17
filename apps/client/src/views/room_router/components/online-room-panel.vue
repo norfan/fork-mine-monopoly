@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import { useMonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
 import { useLoading } from "@src/store";
 import { FPMessage } from "@mine-monopoly/ui";
-import { __FATPAPER_HOST__, __ICE_SERVER_PORT__ } from "@src/../global.config";
+import { getIceHost, getIcePort } from "@src/utils/server-config";
 import { getRandomPublicRoom } from "@src/utils/api/room-router";
 
 const panelElement = ref<HTMLElement | null>(null);
@@ -32,8 +32,8 @@ async function joinRoom(id: string): Promise<boolean> {
 	try {
 		const monopolyClient = await useMonopolyClient({
 			iceServer: {
-				host: __FATPAPER_HOST__,
-				port: __ICE_SERVER_PORT__,
+				host: getIceHost(),
+				port: getIcePort(),
 			},
 		});
 		useLoading().showLoading("正在加入房间...");

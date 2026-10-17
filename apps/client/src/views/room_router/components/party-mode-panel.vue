@@ -4,7 +4,7 @@ import { useMonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
 import { useUserInfo } from "@src/store";
 import router from "@src/router";
 import { FPMessage } from "@mine-monopoly/ui";
-import { __FATPAPER_HOST__, __ICE_SERVER_PORT__ } from "@src/../global.config";
+import { getIceHost, getIcePort } from "@src/utils/server-config";
 
 const panelElement = ref<HTMLElement | null>(null);
 
@@ -16,8 +16,8 @@ async function handleCreateLocalParty() {
 			useMonopolyClient() ??
 			(await useMonopolyClient({
 				iceServer: {
-					host: __FATPAPER_HOST__,
-					port: __ICE_SERVER_PORT__,
+					host: getIceHost(),
+					port: getIcePort(),
 				},
 			}));
 		await monopolyClient.createLocalParty(useUserInfo().username || "本地玩家1");

@@ -12,6 +12,7 @@ import FpPopover from "@src/components/utils/fp-popover/fp-popover.vue";
 import LoginExtra from "@src/views/login/components/login-extra.vue";
 import FpDialog from "@src/components/utils/fp-dialog/fp-dialog.vue";
 import LoginForm from "@src/views/login/components/login-form.vue";
+import LoginServerSetting from "@src/views/login/components/server-setting.vue";
 import HeroTitle from "@src/components/hero-title";
 import { vStagger } from "@src/directives";
 
@@ -174,6 +175,8 @@ function toRoomList() {
 				<span>随便玩玩</span>
 				<FontAwesomeIcon class="icon" icon="gamepad" />
 			</div>
+
+			<LoginServerSetting />
 
 			<FpDialog @submit="handleTouristLogin" v-model:visible="showTouristLogin">
 				<template #title>

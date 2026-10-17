@@ -1,5 +1,5 @@
 import apiClient from "./index";
-import { env } from "@mine-monopoly/env";
+import { getApiBaseUrl } from "@src/utils/server-config";
 
 export async function joinRoomApi(roomId: string) {
 	const response = await apiClient.get<{
@@ -53,23 +53,13 @@ export async function reclaimHostRoom(
 }
 
 export function deleteRoom(roomId: string, hostLeaseToken?: string) {
-	// 使用 sendBeacon 在页面卸�载时清理房间 - 不使用 apiClient
-	const protocol = env("PROTOCOL");
-	const domain = env("MONOPOLY_DOMAIN");
-	const prefix = env("API_BASE_PREFIX", "");
-	const port = env<number>("SERVER_PORT");
-
+	// 使用 sendBeacon 在页面卸载时清理房间 - 不使用 apiClient
+	// 基址运行时读取（支持登录页切换服务器地址，见 server-config.ts）
 	const params = new URLSearchParams({ roomId });
 	if (hostLeaseToken) params.set("hostLeaseToken", hostLeaseToken);
 	const query = params.toString();
 
-	let url: string;
-	if (prefix) {
-		url = `${protocol}://${domain}${prefix}/room-router/delete?${query}`;
-	} else {
-		url = `${protocol}://${domain}:${port}/room-router/delete?${query}`;
-	}
-	navigator.sendBeacon(url);
+	navigator.sendBeacon(`${getApiBaseUrl()}/room-router/delete?${query}`);
 }
 
 export async function getRoomSessionStatus(roomId: string) {

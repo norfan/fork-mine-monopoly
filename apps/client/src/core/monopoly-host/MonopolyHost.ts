@@ -3,7 +3,7 @@ import { ClientSocketMessage, SocketMessage, SocketMsgType, UserInRoomInfo } fro
 import { deleteRoom, emitRoomHeart, reclaimHostRoom } from "@src/utils/api/room-router";
 import { FPMessage } from "@mine-monopoly/ui";
 import { useUserInfo } from "@src/store";
-import { __ICE_SERVER_PATH__, __ICE_USE_PREFIX__, __FATPAPER_HOST__ } from "@src/../global.config";
+import { getIceHost, getIcePath, getIceUsePrefix } from "@src/utils/server-config";
 import { handleClientSocketMessage } from "./client-message-handlers";
 import { Room } from "./Room";
 import { connectionDiagnostics } from "@src/utils/connection-diagnostics";
@@ -236,11 +236,15 @@ export class MonopolyHost {
 	}
 
 	public static async create(roomId: string, host: string, port: number, heartContinuationTimeMs: number, iceServers: RTCIceServer[], registration: { hostLeaseToken: string; hostEpoch: number; hostName: string; hostId: string }) {
+		// 信令地址运行时读取（支持登录页切换服务器地址，见 server-config.ts）
+		const iceUsePrefix = getIceUsePrefix();
+		const iceHost = getIceHost();
+		const icePath = getIcePath();
 		const peer = await new Promise<Peer>((resolve) => {
-			const peerOptions = __ICE_USE_PREFIX__
+			const peerOptions = iceUsePrefix
 				? {
-						host: __FATPAPER_HOST__,
-						path: __ICE_SERVER_PATH__,
+						host: iceHost,
+						path: icePath,
 						secure: true,
 						debug: 0,
 						config: { iceServers },
@@ -248,7 +252,7 @@ export class MonopolyHost {
 				: { host, port, debug: 0, config: { iceServers } };
 
 			connectionDiagnostics.logPeerEvent("Host.Peer.constructor", JSON.stringify({
-				mode: __ICE_USE_PREFIX__ ? "prefix" : "port",
+				mode: iceUsePrefix ? "prefix" : "port",
 			}));
 
 			const peer = new Peer(peerOptions);

@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
-import { env } from "@mine-monopoly/env";
 import { FPMessage } from "@mine-monopoly/ui";
 import { clearAuthAndRedirect, getRefreshToken, setToken, setRefreshToken } from "@src/utils/auth";
+import { getApiBaseUrl } from "@src/utils/server-config";
 import type { ApiResponse } from "@mine-monopoly/types";
 import logService, { ErrorCategory, ErrorLevel } from "@src/utils/log";
 
@@ -13,24 +13,16 @@ declare module "axios" {
 	}
 }
 
-// 获取 API 基础 URL
-const getApiBaseUrl = () => {
-	const protocol = env("PROTOCOL");
-	const domain = env("MONOPOLY_DOMAIN");
-	const prefix = env("API_BASE_PREFIX", "");
-	const port = env<number>("SERVER_PORT");
-
-	// 如果有前缀，使用路径模式（不需要端口）
-	if (prefix) {
-		return `${protocol}://${domain}${prefix}`;
-	}
-	// 否则使用端口模式
-	return `${protocol}://${domain}:${port}`;
-};
-
+// API 基址：运行时读取（支持登录页切换服务器地址，见 server-config.ts）
 const apiClient = axios.create({
 	baseURL: getApiBaseUrl(),
 	timeout: 15000,
+});
+
+// 每次请求都按当前配置设置 baseURL，切换服务器地址后无需刷新页面即可生效
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+	config.baseURL = getApiBaseUrl();
+	return config;
 });
 
 // Symbol 标记：用于标记已在拦截器中处理过的错误
@@ -242,8 +234,9 @@ apiClient.interceptors.response.use(
 		}
 
 		// 显示错误消息（必须在日志记录之前，防止日志异常导致消息丢失）
-		// silent 标记的请求（心跳/轮询）失败时不弹 toast，由调用方自行处理
-		if (showErrorMessage && message && !(originalConfig as InternalAxiosRequestConfig | undefined)?.silent) {
+		// silent 标记的请求（心跳/轮询/本地派对离线降级）失败时不弹 toast、不写错误日志，由调用方自行处理
+		const isSilent = (originalConfig as InternalAxiosRequestConfig | undefined)?.silent;
+		if (showErrorMessage && message && !isSilent) {
 			FPMessage({ type: "error", message });
 		}
 
@@ -252,26 +245,28 @@ apiClient.interceptors.response.use(
 		(error as any)[AXIOS_HANDLED_ERROR] = true;
 
 		// 记录错误日志（放在 try-catch 中，防止 FormData 等不可序列化数据导致日志写入异常中断错误处理流程）
-		try {
-			await logService.error({
-				category: errorCategory,
-				message,
-				stack: error.stack,
-				context: {
-					requestConfig: originalConfig ? {
-						url: originalConfig.url ?? "",
-						method: originalConfig.method ?? "",
-						data: originalConfig.data instanceof FormData ? "[FormData]" : originalConfig.data
-					} : undefined,
-					responseInfo: error.response ? {
-						status: error.response.status,
-						statusText: error.response.statusText,
-						data: error.response.data
-					} : undefined
-				}
-			});
-		} catch {
-			// 日志记录失败不应影响业务流程
+		if (!isSilent) {
+			try {
+				await logService.error({
+					category: errorCategory,
+					message,
+					stack: error.stack,
+					context: {
+						requestConfig: originalConfig ? {
+							url: originalConfig.url ?? "",
+							method: originalConfig.method ?? "",
+							data: originalConfig.data instanceof FormData ? "[FormData]" : originalConfig.data
+						} : undefined,
+						responseInfo: error.response ? {
+							status: error.response.status,
+							statusText: error.response.statusText,
+							data: error.response.data
+						} : undefined
+					}
+				});
+			} catch {
+				// 日志记录失败不应影响业务流程
+			}
 		}
 
 		return Promise.reject(error);
