@@ -456,14 +456,16 @@ export class GameRenderer {
 	}
 
 	private initBackground() {
-		const bgTextureLoader = new THREE.TextureLoader();
+		// 地图容器必须无条件加入场景：背景图缺失时只跳过背景纹理，
+		// 不能连带把整个地图容器藏在场景外（否则地图全白但射线命中仍在）
+		this.scene.add(this.mapContainer);
 		const bgResource = useResourceStore().getRecourceById(this.mapData.info.backgroundImageId);
 		if (!bgResource) return;
 
+		const bgTextureLoader = new THREE.TextureLoader();
 		const bgTexture = bgTextureLoader.load(bgResource.url);
 
 		this.scene.background = bgTexture;
-		this.scene.add(this.mapContainer);
 	}
 
 	private async initMap() {

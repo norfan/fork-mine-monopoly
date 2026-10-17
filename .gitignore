@@ -157,3 +157,9 @@ AGENTS.md
 /.agents
 
 .codegraph
+
+# 调试与复现产物（截图/临时脚本）
+test-assets/
+
+# WorkBuddy agent 项目数据
+.workbuddy-ai/

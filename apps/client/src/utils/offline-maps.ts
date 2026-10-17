@@ -42,6 +42,16 @@ const BUILT_IN_MAPS: OfflineMapMeta[] = [
 		fileName: "offline-maps/minimal-map-8.fpmap",
 		coverUrl: "offline-maps/cover-minimal-8.png",
 	},
+	{
+		id: "offline-map-tang-1",
+		name: "盛世大唐",
+		author: "AI 生成",
+		version: "1.0.0",
+		description:
+			"唐朝主题 40 格经典闭环：八道地产廿四格、皇榜机会、风云命运、户部赋税，十二机会卡与六位唐人角色，系统默认阶段开箱即玩",
+		fileName: "offline-maps/tang-dynasty.fpmap",
+		coverUrl: "offline-maps/cover-tang.png",
+	},
 ];
 
 /** 全量离线地图 = 手工内置 + 官方下载（scripts/download-official-maps.mjs 维护） */
