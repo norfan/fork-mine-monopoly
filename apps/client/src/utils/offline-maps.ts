@@ -1,7 +1,8 @@
 // 离线内置地图注册表（方案1）
 // 本地派对离线模式（拉不到服务器官方地图列表）时，直接展示这里注册的内置地图，
 // 玩家点选即可加载，无需导入本地文件、不依赖服务器。
-import type { GameMapInDb } from "@mine-monopoly/types";
+import type { GameMapChangelogEntry, GameMapInDb } from "@mine-monopoly/types";
+import { OFFICIAL_OFFLINE_MAPS } from "./official-maps.generated";
 
 /** 静态资源基础路径（dev 为 /monopoly/，生产与 base 一致） */
 const BASE = import.meta.env.BASE_URL;
@@ -20,16 +21,18 @@ export interface OfflineMapMeta {
 	author: string;
 	/** 展示版本号 */
 	version: string;
-	/** 描述 */
+	/** 描述（完整 Markdown） */
 	description: string;
 	/** public 下的 .fpmap 文件路径（相对 /monopoly/） */
 	fileName: string;
 	/** public 下的封面图片路径（相对 /monopoly/） */
 	coverUrl: string;
+	/** 更新日志（可选，API 返回的 changelog） */
+	changelog?: GameMapChangelogEntry[];
 }
 
 /** 内置离线地图清单：在此追加新地图即可出现在离线选择列表 */
-export const OFFLINE_MAPS: OfflineMapMeta[] = [
+const BUILT_IN_MAPS: OfflineMapMeta[] = [
 	{
 		id: "offline-map-minimal-8",
 		name: "离线测试地图-8格",
@@ -41,16 +44,19 @@ export const OFFLINE_MAPS: OfflineMapMeta[] = [
 	},
 ];
 
+/** 全量离线地图 = 手工内置 + 官方下载（scripts/download-official-maps.mjs 维护） */
+export const OFFLINE_MAPS: OfflineMapMeta[] = [...BUILT_IN_MAPS, ...OFFICIAL_OFFLINE_MAPS];
+
 /** 将内置地图元数据转换为 MapPreviewer 可渲染的 GameMapInDb 结构 */
 export function offlineMapToGameMapInDb(meta: OfflineMapMeta): GameMapInDb {
 	return {
 		id: meta.id,
 		name: meta.name,
 		author: meta.author,
-		version: 1,
+		version: Number(meta.version) || 1,
 		description: meta.description,
 		pendingChangelog: null,
-		changelog: [],
+		changelog: meta.changelog ?? [],
 		hash: `offline-${meta.id}`,
 		coverUrl: assetUrl(meta.coverUrl),
 		mapUrl: assetUrl(meta.fileName),

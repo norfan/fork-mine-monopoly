@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { GameMapInDb } from "@mine-monopoly/types";
-import { env } from "@mine-monopoly/env";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import MapChangelogDialog from "@src/views/room/components/map-changelog-dialog.vue";
+import FpDialog from "@src/components/utils/fp-dialog/fp-dialog.vue";
+import { marked } from "marked";
 
 const { map } = defineProps<{ map: GameMapInDb }>();
 
 const changelogVisible = ref(false);
+const descVisible = ref(false);
 
 const coverImageUrl = computed(() => {
 	return map.coverUrl;
@@ -33,11 +35,27 @@ const latestLogPreview = computed(() => {
 		.trim();
 	return plain.length > 120 ? `${plain.slice(0, 120)}...` : plain;
 });
+
+/** 是否有描述内容 */
+const hasDescription = computed(() => !!(map.description?.trim()));
+
+/** 描述 Markdown 渲染 */
+function renderDescHtml(content: string) {
+	if (!content?.trim()) return "";
+	return marked.parse(content) as string;
+}
 </script>
 
 <template>
 	<div class="map-preview">
 		<MapChangelogDialog v-model:visible="changelogVisible" :map="map" />
+		<FpDialog v-model:visible="descVisible" :style="'width: 60%; max-width: 37.5rem;'" :cancel-text="undefined" confirm-text="关闭">
+			<template #title>"{{ map.name }}"地图说明</template>
+			<div class="desc-container">
+				<div v-if="!hasDescription" class="desc-empty">暂无说明</div>
+				<div v-else class="desc-content markdown-content" v-html="renderDescHtml(map.description)"></div>
+			</div>
+		</FpDialog>
 		<div class="map-info">
 			<div class="top-area">
 				<div class="name-row" :class="{ 'is-official': map.isOfficial }">
@@ -45,20 +63,26 @@ const latestLogPreview = computed(() => {
 					<div v-if="map.isOfficial" class="official-badge" title="官方地图">官方</div>
 					<div v-else class="workshop-badge" title="创意工坊">创意工坊</div>
 				</div>
-				<div
-					v-if="hasChangelog"
-					class="changelog-entry"
-					@click.stop="changelogVisible = true"
-					title="查看更新日志"
-				>
-					<FontAwesomeIcon icon="clock-rotate-left" />
-					<span class="changelog-entry-text">更新日志</span>
-					<div class="changelog-tooltip">
-						<div class="tooltip-head">
-							<span class="tooltip-version">v{{ latestLog?.version }}</span>
-							<span class="tooltip-tip">点击查看全部历史</span>
+				<div class="action-row">
+					<div v-if="hasDescription" class="desc-entry" @click.stop="descVisible = true" title="查看地图说明">
+						<FontAwesomeIcon icon="circle-info" />
+						<span>说明</span>
+					</div>
+					<div
+						v-if="hasChangelog"
+						class="changelog-entry"
+						@click.stop="changelogVisible = true"
+						title="查看更新日志"
+					>
+						<FontAwesomeIcon icon="clock-rotate-left" />
+						<span class="changelog-entry-text">更新日志</span>
+						<div class="changelog-tooltip">
+							<div class="tooltip-head">
+								<span class="tooltip-version">v{{ latestLog?.version }}</span>
+								<span class="tooltip-tip">点击查看全部历史</span>
+							</div>
+							<div class="tooltip-content">{{ latestLogPreview }}</div>
 						</div>
-						<div class="tooltip-content">{{ latestLogPreview }}</div>
 					</div>
 				</div>
 			</div>
@@ -126,19 +150,27 @@ const latestLogPreview = computed(() => {
 		}
 	}
 
-	// 更新日志入口：位于地图名称下方
+	// 更新日志 + 说明入口：并排位于地图名称下方
 	.top-area {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
 
-		.changelog-entry {
+		.action-row {
 			display: flex;
 			align-items: center;
-			gap: 0.3rem;
-			width: max-content;
+			gap: 0.35rem;
 			margin-top: 0.3rem;
 			margin-left: 0.2rem;
+			flex-wrap: wrap;
+		}
+
+		.changelog-entry,
+		.desc-entry {
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+			width: max-content;
 			padding: 0.15rem 0.5rem;
 			border-radius: 0.4rem;
 			font-size: 0.7rem;
@@ -152,7 +184,9 @@ const latestLogPreview = computed(() => {
 			&:hover {
 				background-color: rgba(255, 255, 255, 1);
 			}
+		}
 
+		.changelog-entry {
 			// 悬停提示：最新一条日志，向下弹出
 			.changelog-tooltip {
 				display: none;
@@ -180,7 +214,6 @@ const latestLogPreview = computed(() => {
 				.tooltip-head {
 					display: flex;
 					align-items: center;
-					justify-content: space-between;
 					gap: 0.5rem;
 					margin-bottom: 0.3rem;
 
@@ -231,7 +264,7 @@ const latestLogPreview = computed(() => {
 		background-color: var(--fp-color-bg-transparent);
 	}
 
-	& .author-name {
+	.author-name {
 		width: max-content;
 		padding: 0.2rem 0.4rem;
 		border-radius: 0.3rem;
@@ -245,6 +278,7 @@ const latestLogPreview = computed(() => {
 		}
 	}
 }
+
 .map-cover-container {
 	width: 100%;
 	height: 100%;
@@ -275,6 +309,93 @@ const latestLogPreview = computed(() => {
 		object-fit: contain;
 		margin: auto;
 		border-radius: 0.6em;
+	}
+}
+
+// 描述弹窗样式（与 changelog dialog 同风格）
+.desc-container {
+	max-height: 60vh;
+	overflow-y: auto;
+	padding-right: 0.5rem;
+
+	.desc-empty {
+		color: #999;
+		text-align: center;
+		padding: 2rem 0;
+	}
+
+	.desc-content {
+		color: #3e3e3e;
+		line-height: 1.75;
+		font-size: 0.9rem;
+	}
+}
+
+// Markdown 内容样式（参考 map-changelog-dialog.vue）
+.markdown-content {
+	:deep(h2),
+	:deep(h3) {
+		color: var(--fp-color-primary);
+		margin-top: 1rem;
+		margin-bottom: 0.5rem;
+
+		&:first-child {
+			margin-top: 0;
+		}
+	}
+
+	:deep(p) {
+		margin-bottom: 0.6rem;
+	}
+
+	:deep(ul) {
+		list-style: none;
+		padding-left: 0;
+		margin-bottom: 0.6rem;
+	}
+
+	:deep(li) {
+		line-height: 1.6;
+		margin-bottom: 0.3rem;
+		padding-left: 1em;
+		text-indent: -1em;
+
+		&::before {
+			content: "- ";
+			color: var(--fp-color-secondary);
+		}
+	}
+
+	:deep(table) {
+		width: 100%;
+		border-collapse: collapse;
+		margin-bottom: 0.8rem;
+		font-size: 0.85rem;
+	}
+
+	:deep(th),
+	:deep(td) {
+		border: 0.0625rem solid #ddd;
+		padding: 0.4rem 0.6rem;
+		text-align: left;
+	}
+
+	:deep(th) {
+		background-color: rgba(76, 175, 80, 0.1);
+		font-weight: 600;
+	}
+
+	:deep(strong) {
+		color: var(--fp-color-text-secondary);
+		font-weight: 600;
+	}
+
+	:deep(code) {
+		background-color: rgba(0, 0, 0, 0.05);
+		padding: 0.1em 0.3em;
+		border-radius: 0.1875rem;
+		font-family: monospace;
+		font-size: 0.9em;
 	}
 }
 </style>

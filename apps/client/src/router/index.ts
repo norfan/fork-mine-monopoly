@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, createWebHistory } from "vue-router";
 import { useLoading, useRoomInfo, useUserInfo } from "@src/store";
-import { destoryMonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
+import { MonopolyClient, destoryMonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
 
 function componentLoadedInterceptor(loader: () => Promise<any>) {
 	return async () => {
@@ -43,7 +43,10 @@ router.beforeEach((to, form) => {
 			break;
 		case "game":
 		case "room":
-			if (!useRoomInfo().roomId) {
+			// 房间/游戏页依赖 MonopolyClient 单例：经过房间选择页时单例会被销毁，
+			// 若此时通过浏览器前进/后退等历史导航回到本页，实例已不存在，
+			// 房间组件会拿到 undefined 的 socketClient 导致全面崩溃，直接弹回重新进入。
+			if (!useRoomInfo().roomId || !MonopolyClient.getInstance()) {
 				return { name: "room-router" };
 			}
 			break;

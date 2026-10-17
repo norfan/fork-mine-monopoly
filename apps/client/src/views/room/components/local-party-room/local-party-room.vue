@@ -114,24 +114,33 @@ function handleChangeRole() {
 	else notifyResult(result, "修改角色失败");
 }
 
+/** 离线降级：展示内置离线地图（若有），否则引导玩家导入本地地图文件（.fpmap/.mmmap） */
+function showOfflineMapFallback(reason: string) {
+	if (OFFLINE_MAPS.length > 0) {
+		mapList.value = OFFLINE_MAPS.map(offlineMapToGameMapInDb);
+		isOfflineMapList.value = true;
+		mapSelectorVisible.value = true;
+		return;
+	}
+	FPMessage({ type: "info", message: `${reason}，请使用「导入本地地图」` });
+	void handleUploadMap();
+}
+
 async function handleSelectMap() {
 	try {
 		useLoading().showLoading("地图列表加载中...");
 		const { gameMapList } = await getGameMapList(1, 1000);
+		// 服务器列表为空时（如本地服务器尚未配置地图数据），同样降级展示内置离线地图。
+		if (!gameMapList || gameMapList.length === 0) {
+			showOfflineMapFallback("服务器暂无可用地图");
+			return;
+		}
 		mapList.value = gameMapList;
 		isOfflineMapList.value = false;
 		mapSelectorVisible.value = true;
 	} catch {
 		// 离线降级：拉不到官方地图列表时，展示内置离线地图（若有），玩家点选即可加载。
-		if (OFFLINE_MAPS.length > 0) {
-			mapList.value = OFFLINE_MAPS.map(offlineMapToGameMapInDb);
-			isOfflineMapList.value = true;
-			mapSelectorVisible.value = true;
-			return;
-		}
-		// 无内置地图时引导玩家导入本地地图文件（.fpmap/.mmmap）。
-		FPMessage({ type: "info", message: "离线模式无法加载官方地图列表，请使用「导入本地地图」" });
-		void handleUploadMap();
+		showOfflineMapFallback("离线模式无法加载官方地图列表");
 	} finally {
 		useLoading().hideLoading();
 	}
