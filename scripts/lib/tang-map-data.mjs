@@ -79,7 +79,7 @@ function readDefaultCode(name) {
 	return readFileSync(join(dir, name), "utf8");
 }
 
-function getInitPhase() {
+export function getInitPhase() {
 	const phase = (id, name, description, mark, code) => ({ id, name, description, from: "系统", mark, initEventCode: code });
 	const P = {
 		GAME_OVER_RULE: "sys-phase-game-over-rule",

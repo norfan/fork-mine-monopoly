@@ -52,6 +52,36 @@ const BUILT_IN_MAPS: OfflineMapMeta[] = [
 		fileName: "offline-maps/tang-dynasty.fpmap",
 		coverUrl: "offline-maps/cover-tang.png",
 	},
+	{
+		id: "offline-map-classic-cn",
+		name: "神州大地",
+		author: "AI 生成",
+		version: "1.0.0",
+		description:
+			"致敬大富翁4中国大陆地图：八大商区廿四地产、机遇风云、税务稽查，十二机会卡与钱夫人/孙小美等六位经典角色，系统默认阶段开箱即玩",
+		fileName: "offline-maps/classic-cn.fpmap",
+		coverUrl: "offline-maps/cover-cn.png",
+	},
+	{
+		id: "offline-map-classic-sanguo",
+		name: "三国风云",
+		author: "AI 生成",
+		version: "1.0.0",
+		description:
+			"致敬富甲天下3：八州廿四城、锦囊机遇、风云突变、户部税关，十二机会卡与曹操/刘备/孙权等六位群雄，系统默认阶段开箱即玩",
+		fileName: "offline-maps/classic-sanguo.fpmap",
+		coverUrl: "offline-maps/cover-sanguo.png",
+	},
+	{
+		id: "offline-map-classic-jiangnan",
+		name: "江南水乡",
+		author: "AI 生成",
+		version: "1.0.0",
+		description:
+			"致敬大富翁6中国地图：水乡八大组团廿四地段、签筒机遇、风雨突变、河泊税课，十二机会卡与六位经典角色，系统默认阶段开箱即玩",
+		fileName: "offline-maps/classic-jiangnan.fpmap",
+		coverUrl: "offline-maps/cover-jiangnan.png",
+	},
 ];
 
 /** 全量离线地图 = 手工内置 + 官方下载（scripts/download-official-maps.mjs 维护） */

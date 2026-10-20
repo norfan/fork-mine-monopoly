@@ -1,0 +1,51 @@
+// 经典复刻地图效果函数库（神州大地/三国风云/江南水乡 共用）
+// 与 tang-extra-libs 同构：地产到达（购置/建造/收租）、机会卡抽取、通用收付款
+function clsNumber(gp: IGameProcess, key: string, fallback: number): number {
+  const value = Number(gp.gameSetting[key]?.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+async function clsCash(gp: IGameProcess, player: IPlayer, base: number, title: string): Promise<void> {
+  if (player.isBankrupted) return;
+  const money = Math.max(0, Math.round(Math.abs(base)));
+  if (base >= 0) await player.gain(money, "cls_card");
+  else if (money > 0) await player.cost(money, "cls_tax");
+  gp.messageNotify([player.id], { type: base >= 0 ? "success" : "warning", content: `${title}：${base >= 0 ? "收入" : "支出"} ${money}，结余 ${player.money}` });
+  gp.gameDataBroadcast();
+}
+async function clsArrive(gp: IGameProcess, property: IProperty, player: IPlayer): Promise<void> {
+  if (player.isBankrupted) return;
+  const owner = property.owner;
+  const displayName = property.name.replace(/\n/g, "·");
+  if (!owner) {
+    const price = property.sellCost;
+    if (player.money <= price) {
+      gp.messageNotify([player.id], { type: "warning", content: `${displayName} 售价 ${price}，现金不足，无力购置。` });
+      return;
+    }
+    const result = await gp.showConfirmDialog(player.id, { title: `购置 ${displayName}`, content: `售价 ${price}，当前结余 ${player.money}。`, confirmText: "买下", cancelText: "放弃" }, { timeout: clsNumber(gp, "turnTimeout", 15) * 1000 });
+    if (result.confirm && !player.isBankrupted && player.money > price) await gp.handlePlayerBuyProperty(player, property);
+    return;
+  }
+  if (owner.id === player.id) {
+    if (property.level < property.maxLevel && player.money > property.buildCost) {
+      const result = await gp.showConfirmDialog(player.id, { title: `扩建 ${displayName}`, content: `建造费 ${property.buildCost}，升至 ${property.level + 1} 级。`, confirmText: "开工", cancelText: "暂不" }, { timeout: clsNumber(gp, "turnTimeout", 15) * 1000 });
+      if (result.confirm && !player.isBankrupted) await gp.handlePlayerBuildUp(player, property);
+    }
+    return;
+  }
+  const rent = property.costList[property.level] || 0;
+  const paid = await player.cost(rent, "cls_rent", owner);
+  if (paid.actualCost > 0) await owner.gain(paid.actualCost, "cls_rent", player);
+  gp.msgNotifyBroadcast("info", `${player.name} 在 ${displayName} 缴纳租银 ${paid.actualCost} 予 ${owner.name}`);
+  gp.gameDataBroadcast();
+}
+async function clsDraw(gp: IGameProcess, player: IPlayer): Promise<void> {
+  const cards = Array.from(gp.chanceCardInfos.values());
+  if (!cards.length) return;
+  const info = cards[Math.floor(Math.random() * cards.length)];
+  await gp.showConfirmDialog(player.id, { title: `机会卡 · ${info.name}`, content: `${info.description}\n\n点击确认后执行效果；等待超时将自动执行。`, confirmText: "知晓并执行", cancelText: "已读继续" }, { timeout: clsNumber(gp, "chanceTimeout", 20) * 1000, defaultValue: { id: player.id, confirm: true } });
+  if (player.isBankrupted) return;
+  gp.msgNotifyBroadcast("info", `${player.name} 抽到「${info.name}」`);
+  await gp.createNewChanceCard(info.id).use(player, player, gp);
+  gp.gameDataBroadcast();
+}
