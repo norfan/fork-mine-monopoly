@@ -144,6 +144,31 @@ export class Canvas {
 		}
 	}
 
+	/** 三角形填充（扫描线，顶点任意顺序） */
+	fillTriangle(x1, y1, x2, y2, x3, y3, color) {
+		const minX = Math.max(0, Math.floor(Math.min(x1, x2, x3)));
+		const maxX = Math.min(this.width - 1, Math.ceil(Math.max(x1, x2, x3)));
+		const minY = Math.max(0, Math.floor(Math.min(y1, y2, y3)));
+		const maxY = Math.min(this.height - 1, Math.ceil(Math.max(y1, y2, y3)));
+		const den = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3);
+		if (Math.abs(den) < 1e-9) return;
+		for (let y = minY; y <= maxY; y++) {
+			const py = y + 0.5;
+			for (let x = minX; x <= maxX; x++) {
+				const px = x + 0.5;
+				const a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / den;
+				const b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / den;
+				const g = 1 - a - b;
+				if (a >= 0 && b >= 0 && g >= 0) this.setPx(x, y, color);
+			}
+		}
+	}
+
+	/** 等腰三角形（顶点在顶部，底边两点在下方） */
+	fillTriangleLike(cx, topY, xl, yBase, xr, yb2, color) {
+		this.fillTriangle(cx, topY, xl, yBase, xr, yb2, color);
+	}
+
 	fillEllipse(cx, cy, rx, ry, color) {
 		for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
 			for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {

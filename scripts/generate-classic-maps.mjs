@@ -10,6 +10,10 @@ import { buildShenzhouMap, buildSanguoMap, buildJiangnanMap } from "./lib/classi
 import * as modern from "./lib/theme-houses-modern.mjs";
 import * as sanguo from "./lib/theme-houses-sanguo.mjs";
 import * as jiangnan from "./lib/theme-houses-jiangnan.mjs";
+import { buildSpriteHouses, buildSpriteSigns } from "./lib/theme-sprite.mjs";
+import { buildModernArt } from "./lib/art-modern-2d.mjs";
+import { buildSanguoArt } from "./lib/art-sanguo-2d.mjs";
+import { buildJiangnanArt } from "./lib/art-jiangnan-2d.mjs";
 import { buildCastAvatars } from "./lib/make-avatars-cast.mjs";
 import { buildSanguoAvatars } from "./lib/make-avatars-sanguo.mjs";
 import { buildCovers } from "./lib/make-covers.mjs";
@@ -20,10 +24,30 @@ const PROJECT_ROOT = join(__dirname, "..");
 const OUT_DIR = join(PROJECT_ROOT, "apps/client/public/offline-maps");
 const OUT_JSON_DIR = join(PROJECT_ROOT, "test-assets");
 
+// 2D 插画（256×256 PNG）与牌坊贴片
+const ART = { modern: buildModernArt(), sanguo: buildSanguoArt(), jiangnan: buildJiangnanArt() };
+const SPRITE_SIGNS = buildSpriteSigns();
+
+// 装配：地产/四角/特殊格 → 2D 贴片；行动格底座/中心装饰 → 保留 3D 小景
 const THEMES = {
-	modern: (m) => [...m.buildDistrictHouses(), ...m.buildActs(), ...m.buildDecos(), ...m.buildSpecials(), ...m.buildCorners()],
-	sanguo: (m) => [...m.buildDistrictHouses(), ...m.buildActs(), ...m.buildDecos(), ...m.buildSpecials(), ...m.buildCorners()],
-	jiangnan: (m) => [...m.buildDistrictHouses(), ...m.buildActs(), ...m.buildDecos(), ...m.buildSpecials(), ...m.buildCorners()],
+	modern: (m) => [
+		...buildSpriteHouses(ART.modern, m.DISTRICTS.map((d) => d.key)),
+		...m.buildActs(),
+		...m.buildDecos(),
+		...SPRITE_SIGNS,
+	],
+	sanguo: (m) => [
+		...buildSpriteHouses(ART.sanguo, m.DISTRICTS.map((d) => d.key)),
+		...m.buildActs(),
+		...m.buildDecos(),
+		...SPRITE_SIGNS,
+	],
+	jiangnan: (m) => [
+		...buildSpriteHouses(ART.jiangnan, m.DISTRICTS.map((d) => d.key)),
+		...m.buildActs(),
+		...m.buildDecos(),
+		...SPRITE_SIGNS,
+	],
 };
 
 const MODULES = { modern, sanguo, jiangnan };
