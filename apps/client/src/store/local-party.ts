@@ -21,7 +21,8 @@ export const useLocalParty = defineStore("local-party", {
 		dialogTimeoutOwners: {} as Record<string, string>,
 		/** 桌游规则配置：实体档位（lite=极简仅钞票 / board=桌游钞票+棋盘）、骰子模式（phone=手机掷骰 / manual=实体骰子）、回合时长（秒）、钞票模式（digital=纯手机记账 / cash=实体钞票双轨）。 */
 		tabletop: {
-			mode: "board" as "lite" | "board",
+			// 实体档位默认极简（仅钞票），用户可在房间内手动切到桌游档
+			mode: "lite" as "lite" | "board",
 			diceMode: "phone" as "phone" | "manual",
 			turnTimeoutSec: 60,
 			cashMode: "digital" as "digital" | "cash",
@@ -93,7 +94,7 @@ export const useLocalParty = defineStore("local-party", {
 			this.hasPendingInteraction = false;
 			this.dialogTimeoutOwners = {};
 			this.tabletop = {
-				mode: "board",
+				mode: "lite",
 				diceMode: "phone",
 				turnTimeoutSec: 60,
 				cashMode: "digital",

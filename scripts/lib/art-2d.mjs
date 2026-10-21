@@ -168,3 +168,36 @@ export function topPole(c, cx, cy, r, flag, pole) {
 	c.fillCircle(cx, cy, r, lit(flag, 0.3));
 	c.fillCircle(cx, cy, r * 0.5, dim(flag, 0.6));
 }
+
+/**
+ * 桌游桌面背景（俯视 2D 场景用）：桌布底色 + 布纹 + 桌沿深色描边 + 四角暗角。
+ * theme: { base, edge, line, corner } 颜色 [r,g,b]
+ */
+export function tabletopDesk(c, W, H, theme) {
+	c.fillAll([...theme.base, 255]);
+	// 布纹：稀疏细线（混色，Canvas 无 alpha 混合）
+	const lineC = mix(theme.base, theme.line, 0.35);
+	for (let y = 6; y < H; y += 7) c.hLine(0, W, y, lineC);
+	for (let x = 4; x < W; x += 11) {
+		const c2 = mix(theme.base, theme.line, 0.18);
+		for (let y = 0; y < H; y += 13) c.vLine(x, y, y + 6, c2);
+	}
+	// 内框双线（桌沿）
+	const m = 10;
+	c.strokeRect(m, m, W - m, H - m, 3, theme.edge);
+	c.strokeRect(m + 10, m + 10, W - m - 10, H - m - 10, 1, mix(theme.edge, theme.base, 0.35));
+	// 四角暗角（阶梯混色模拟渐变）
+	for (let i = 0; i < 10; i++) {
+		const t = i / 10;
+		const col = mix(theme.base, [40, 34, 28], 0.16 * (1 - t));
+		const l = m + i * 4;
+		c.strokeRect(l, l, W - l, H - l, 4, col);
+	}
+	// 四角纹样（角花）
+	for (const [cx, cy, sx, sy] of [[56, 56, 1, 1], [W - 56, 56, -1, 1], [56, H - 56, 1, -1], [W - 56, H - 56, -1, -1]]) {
+		for (let i = 0; i < 3; i++) {
+			const r = 4 + i * 5;
+			c.strokeCircle(cx + sx * i * 6, cy + sy * i * 6, r, 1, mix(theme.edge, theme.base, 0.25 + i * 0.2));
+		}
+	}
+}

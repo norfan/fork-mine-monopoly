@@ -344,15 +344,17 @@ export class GameRenderer {
 		});
 
 		if (this.view2D) {
-			// 2D 俯视：初始聚焦地图中心，保证整盘入画（而非锁在起点角落）
+			// 2D 俯视：初始聚焦地图中心，保证整盘入画（而非锁在起点角落）；
+			// 且跳过 focusMe 的锁人跟随，回合切换也不抢镜头（俯视棋盘整体感优先）
 			const box = new THREE.Box3().setFromObject(this.mapContainer);
 			if (!box.isEmpty()) {
 				const center = box.getCenter(new THREE.Vector3());
 				this.controls.target.set(center.x, 0, center.z);
 				this.camera.position.set(center.x, GameRenderer.VIEW2D_CAMERA_HEIGHT, center.z + 0.001);
 			}
+		} else {
+			this.focusMe();
 		}
-		this.focusMe();
 		this.pathChoiceController.setRequest(useGameData().mapPathChoiceRequest);
 
 
@@ -515,8 +517,10 @@ export class GameRenderer {
 		const board = new THREE.Group();
 		board.name = "board-2d";
 		const items = this.mapData.mapItems ?? [];
+		const byId = new Map(items.map((i) => [i.id, i]));
 		for (const item of items) {
 			const color = item.type?.color ?? "#c9ccd2";
+			const isHolder = String(item.id).startsWith("disp-");
 			const cx = item.x + 0.5;
 			const cz = item.y + 0.5;
 			// 垫层：1×1 深色，露出的 0.06 边即格线
@@ -527,15 +531,54 @@ export class GameRenderer {
 			base.rotateX(-Math.PI / 2);
 			base.position.set(cx, 0, cz);
 			board.add(base);
-			// 面层：类型底色
+			// 面层：类型底色（地产展示格提亮一档，与外环行动格区分）
+			const topColor = new THREE.Color(color);
+			if (isHolder) topColor.lerp(new THREE.Color(0xffffff), 0.12);
 			const top = new THREE.Mesh(
 				new THREE.PlaneGeometry(0.94, 0.94),
-				new THREE.MeshBasicMaterial({ color: new THREE.Color(color) }),
+				new THREE.MeshBasicMaterial({ color: topColor }),
 			);
 			top.rotateX(-Math.PI / 2);
 			top.position.set(cx, 0.002, cz);
 			board.add(top);
+			// 地产展示格内描边（细框，强化"地皮"感）
+			if (isHolder) {
+				const inner = new THREE.Mesh(
+					new THREE.PlaneGeometry(0.78, 0.78),
+					new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }),
+				);
+				inner.rotateX(-Math.PI / 2);
+				inner.position.set(cx, 0.003, cz);
+				board.add(inner);
+			}
 		}
+
+		// 路径带：外环 40 格中心依次连接（俯视棋盘的行进路线）
+		const ringIds: string[] = this.mapData.mapIndex ?? [];
+		const pts: THREE.Vector3[] = [];
+		for (const id of ringIds) {
+			const it = byId.get(id);
+			if (it) pts.push(new THREE.Vector3(it.x + 0.5, 0, it.y + 0.5));
+		}
+		for (let i = 0; i < pts.length; i++) {
+			const a = pts[i];
+			const b = pts[(i + 1) % pts.length];
+			const dx = b.x - a.x;
+			const dz = b.z - a.z;
+			const len = Math.hypot(dx, dz);
+			if (len < 0.001) continue;
+			const seg = new THREE.Mesh(
+				new THREE.PlaneGeometry(len, 0.16),
+				new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+			);
+			seg.rotation.x = -Math.PI / 2;
+			const g = new THREE.Group();
+			g.position.set((a.x + b.x) / 2, 0.016, (a.z + b.z) / 2);
+			g.rotation.y = -Math.atan2(dz, dx);
+			g.add(seg);
+			board.add(g);
+		}
+
 		this.mapContainer.add(board);
 	}
 
@@ -2875,6 +2918,7 @@ export class GameRenderer {
 	}
 
 	private focusPlayerById(id: string) {
+		if (this.view2D) return; // 俯视棋盘保持全图构图，回合聚焦交由用户主动触发
 		const playerEntity = this.playerEntities.get(id);
 		if (!playerEntity) {
 			console.warn(`[相机] 无法聚焦玩家: 找不到 ID 为 ${id} 的玩家实体`);
