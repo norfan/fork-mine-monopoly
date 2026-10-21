@@ -92,7 +92,7 @@ export class GameRenderer {
 	private renderer: THREE.WebGLRenderer;
 	private popElementRenderer: CSS2DRenderer;
 	private scene: THREE.Scene;
-	private camera: THREE.PerspectiveCamera;
+	private camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
 	private composer: EffectComposer;
 	private renderPass: RenderPass;
 	private chanceCardTargetOutlinePass: OutlinePass;
@@ -135,6 +135,13 @@ export class GameRenderer {
 	private isLockingRole: boolean = false;
 	private isLockingRoleFromSetting: boolean = useSettig().lockRole;
 	private isTurnFocusEnabled: boolean = useSettig().enableTurnFocus;
+
+	/** 俯视 2D 渲染模式：正交相机锁定 90° 俯视，只能缩放/平移（?view=3d 可回退） */
+	private view2D: boolean = useSettig().view2D;
+	/** 2D 模式相机恒定高度（世界单位） */
+	private static readonly VIEW2D_CAMERA_HEIGHT = 16;
+	/** 2D 模式正交视锥半高（覆盖整张 12×12 地图） */
+	private static readonly VIEW2D_FRUSTUM = 8;
 
 	private currentFocusModule: THREE.Object3D | null = null;
 
@@ -179,6 +186,9 @@ export class GameRenderer {
 			// 初始化画质设置（必须在 WebGLRenderer 之前，决定 antialias 等）
 			const settingStore = useSettig();
 			settingStore.initGraphicQuality();
+			settingStore.initViewMode();
+			// 字段初始化早于构造器，这里按 URL/localStorage 修正后的值刷新
+			this.view2D = settingStore.view2D;
 			const isLowEnd = settingStore.graphicQuality === "low";
 			this.isLowEnd = isLowEnd;
 
@@ -194,7 +204,8 @@ export class GameRenderer {
 				// 初始化阴影设置
 				this.renderer.toneMapping = THREE.LinearToneMapping;
 				this.renderer.toneMappingExposure = 1.1;
-				this.renderer.shadowMap.enabled = settingStore.enableShadow;
+				// 2D 俯视模式关闭阴影（正俯视下阴影为纯色团，无信息量且费性能）
+				this.renderer.shadowMap.enabled = settingStore.enableShadow && !this.view2D;
 				this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 			} catch (error) {
 				throw wrapGameInitError("webgl-renderer", error);
@@ -202,7 +213,14 @@ export class GameRenderer {
 
 			try {
 				this.scene = new THREE.Scene();
-				this.camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 1000);
+				if (this.view2D) {
+					// 2D 俯视：正交相机锁定地图正上方，z 微偏避免 up 与视线共线退化
+					this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+					this.camera.position.set(0, GameRenderer.VIEW2D_CAMERA_HEIGHT, 0.001);
+					this.applyCameraViewport();
+				} else {
+					this.camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.1, 1000);
+				}
 				this.composer = new EffectComposer(this.renderer);
 				this.renderPass = new RenderPass(this.scene, this.camera);
 				this.chanceCardTargetOutlinePass = new OutlinePass(
@@ -252,10 +270,20 @@ export class GameRenderer {
 
 				const controls = new OrbitControls(this.camera, this.canvas);
 				controls.enableDamping = true;
-				controls.maxDistance = 30;
-				controls.minDistance = 1;
-				controls.maxPolarAngle = Math.PI / 2;
-				controls.minPolarAngle = Math.PI / 3;
+				if (this.view2D) {
+					// 2D 俯视：禁止旋转/俯仰，只允许缩放与平移
+					controls.enableRotate = false;
+					controls.minPolarAngle = 0;
+					controls.maxPolarAngle = 0.0001; // 0 会导致控制退化，取极小值锁死
+					controls.screenSpacePanning = true; // 俯视下按屏幕方向平移
+					controls.minZoom = 0.35;
+					controls.maxZoom = 4;
+				} else {
+					controls.maxDistance = 30;
+					controls.minDistance = 1;
+					controls.maxPolarAngle = Math.PI / 2;
+					controls.minPolarAngle = Math.PI / 3;
+				}
 				controls.update();
 				this.controls = controls;
 				this.pathChoiceController = new MapPathChoiceSceneController({
@@ -269,8 +297,7 @@ export class GameRenderer {
 				});
 
 				const handleResize = () => {
-					this.camera.aspect = container.clientWidth / container.clientHeight; //相机视角长宽比
-					this.camera.updateProjectionMatrix();
+					this.applyCameraViewport();
 					this.renderer.setSize(container.clientWidth, container.clientHeight);
 					this.renderPass.setSize(container.clientWidth, container.clientHeight);
 					this.composer.setSize(container.clientWidth, container.clientHeight);
@@ -316,6 +343,15 @@ export class GameRenderer {
 			this.initEventListener();
 		});
 
+		if (this.view2D) {
+			// 2D 俯视：初始聚焦地图中心，保证整盘入画（而非锁在起点角落）
+			const box = new THREE.Box3().setFromObject(this.mapContainer);
+			if (!box.isEmpty()) {
+				const center = box.getCenter(new THREE.Vector3());
+				this.controls.target.set(center.x, 0, center.z);
+				this.camera.position.set(center.x, GameRenderer.VIEW2D_CAMERA_HEIGHT, center.z + 0.001);
+			}
+		}
 		this.focusMe();
 		this.pathChoiceController.setRequest(useGameData().mapPathChoiceRequest);
 
@@ -466,6 +502,41 @@ export class GameRenderer {
 		const bgTexture = bgTextureLoader.load(bgResource.url);
 
 		this.scene.background = bgTexture;
+
+		// 2D 俯视模式：地图无格子底板（3D 模式靠模型悬浮），按地图数据绘制格线棋盘
+		if (this.view2D) this.init2DBoard();
+	}
+
+	/**
+	 * 2D 俯视专用：按 mapItems 绘制格子底板（深色垫层当格线 + 类型底色面层）。
+	 * 格子坐标与 setItemPositionOnMap 一致：item.x/item.y → 世界 (x+0.5, z+0.5)。
+	 */
+	private init2DBoard() {
+		const board = new THREE.Group();
+		board.name = "board-2d";
+		const items = this.mapData.mapItems ?? [];
+		for (const item of items) {
+			const color = item.type?.color ?? "#c9ccd2";
+			const cx = item.x + 0.5;
+			const cz = item.y + 0.5;
+			// 垫层：1×1 深色，露出的 0.06 边即格线
+			const base = new THREE.Mesh(
+				new THREE.PlaneGeometry(1, 1),
+				new THREE.MeshBasicMaterial({ color: 0x5b6470 }),
+			);
+			base.rotateX(-Math.PI / 2);
+			base.position.set(cx, 0, cz);
+			board.add(base);
+			// 面层：类型底色
+			const top = new THREE.Mesh(
+				new THREE.PlaneGeometry(0.94, 0.94),
+				new THREE.MeshBasicMaterial({ color: new THREE.Color(color) }),
+			);
+			top.rotateX(-Math.PI / 2);
+			top.position.set(cx, 0.002, cz);
+			board.add(top);
+		}
+		this.mapContainer.add(board);
 	}
 
 	private async initMap() {
@@ -1608,6 +1679,17 @@ export class GameRenderer {
 	) {
 		controls.enabled = false;
 		const targetPos = targetObject.position;
+
+		if (this.view2D) {
+			// 2D 俯视：相机恒在焦点正上方，仅平移 target
+			const followPos = targetPos.clone();
+			followPos.y += GameRenderer.VIEW2D_CAMERA_HEIGHT;
+			const alpha2D = 1 - Math.exp(-10 * delta);
+			controls.target.lerp(targetPos, alpha2D);
+			controls.object.position.lerp(followPos, alpha2D);
+			return;
+		}
+
 		const cameraFaceVector = controls.object.getWorldDirection(new THREE.Vector3());
 		if (Math.abs(cameraFaceVector.x) + Math.abs(cameraFaceVector.z) < 0.000001) return;
 
@@ -1635,6 +1717,26 @@ export class GameRenderer {
 		if (!targetObject) return;
 		controls.enabled = false;
 		const targetPos = targetObject.position;
+
+		if (this.view2D) {
+			// 2D 俯视：直接 tween 到焦点正上方
+			const followPos = targetPos.clone();
+			followPos.y += GameRenderer.VIEW2D_CAMERA_HEIGHT;
+			gsap.killTweensOf([controls.target, controls.object.position]);
+			const timeline2D = gsap.timeline({
+				onComplete: () => {
+					controls.enabled = true;
+				},
+			});
+			timeline2D.to(controls.target, { x: targetPos.x, y: targetPos.y, z: targetPos.z, duration: 0.5, ease: "power2.out" }, 0);
+			timeline2D.to(
+				controls.object.position,
+				{ x: followPos.x, y: followPos.y, z: followPos.z, duration: 0.5, ease: "power2.out" },
+				0,
+			);
+			return;
+		}
+
 		const cameraFaceVector = controls.object.getWorldDirection(new THREE.Vector3());
 		if (Math.abs(cameraFaceVector.x) + Math.abs(cameraFaceVector.z) < 0.000001) return;
 
@@ -2846,6 +2948,27 @@ export class GameRenderer {
 		return "xl";
 	}
 	/**
+	 * 应用相机视口：透视相机走 aspect；2D 正交相机按容器宽高比重算视锥。
+	 * 必须在 renderer/composer setSize 之前调用，保证投影矩阵与新尺寸一致。
+	 */
+	private applyCameraViewport() {
+		if (this.camera instanceof THREE.OrthographicCamera) {
+			const aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
+			const fh = GameRenderer.VIEW2D_FRUSTUM;
+			this.camera.top = fh;
+			this.camera.bottom = -fh;
+			this.camera.left = -fh * aspect;
+			this.camera.right = fh * aspect;
+			this.camera.updateProjectionMatrix();
+			return;
+		}
+		if (this.camera instanceof THREE.PerspectiveCamera) {
+			this.camera.aspect = this.container.clientWidth / this.container.clientHeight; //相机视角长宽比
+			this.camera.updateProjectionMatrix();
+		}
+	}
+
+	/**
 	 * 应用新的像素比
 	 */
 	private applyPixelRatio(newPixelRatio: number) {
@@ -2854,8 +2977,7 @@ export class GameRenderer {
 		this.composer.setPixelRatio(newPixelRatio);
 
 		// 更新相机和尺寸
-		this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
-		this.camera.updateProjectionMatrix();
+		this.applyCameraViewport();
 		this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
 		this.renderPass.setSize(this.container.clientWidth, this.container.clientHeight);
 		this.composer.setSize(this.container.clientWidth, this.container.clientHeight);

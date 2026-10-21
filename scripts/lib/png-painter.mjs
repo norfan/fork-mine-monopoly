@@ -169,6 +169,24 @@ export class Canvas {
 		this.fillTriangle(cx, topY, xl, yBase, xr, yb2, color);
 	}
 
+	/** 椭圆描边 */
+	strokeEllipse(cx, cy, rx, ry, thickness, color) {
+		for (let t = 0; t < thickness; t++) {
+			const rrx = Math.max(0, rx - t);
+			const rry = Math.max(0, ry - t);
+			const inner = Math.max(0, (rrx - 1.4) / Math.max(0.001, rrx)) ** 2;
+			const innery = Math.max(0, (rry - 1.4) / Math.max(0.001, rry)) ** 2;
+			for (let y = Math.floor(cy - rry - 1); y <= Math.ceil(cy + rry + 1); y++) {
+				for (let x = Math.floor(cx - rrx - 1); x <= Math.ceil(cx + rrx + 1); x++) {
+					const dx = (x - cx) / Math.max(0.001, rrx);
+					const dy = (y - cy) / Math.max(0.001, rry);
+					const d2 = dx * dx + dy * dy;
+					if (d2 <= 1 && d2 > Math.min(inner, innery) * 0.85) this.setPx(x, y, color);
+				}
+			}
+		}
+	}
+
 	fillEllipse(cx, cy, rx, ry, color) {
 		for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
 			for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {

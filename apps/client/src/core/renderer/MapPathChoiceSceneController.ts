@@ -10,7 +10,7 @@ export type MapPathChoiceArrowFactory = () => THREE.Object3D;
 
 type MapPathChoiceSceneControllerOptions = {
 	scene: THREE.Scene;
-	camera: THREE.PerspectiveCamera;
+	camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
 	controls: OrbitControls;
 	canvas: HTMLCanvasElement;
 	getMapItemAnchor: (mapItemId: string) => THREE.Vector3 | undefined;
@@ -363,8 +363,16 @@ export class MapPathChoiceSceneController {
 				{ position: entry.label.getWorldPosition(new THREE.Vector3()), padding: 2.6 },
 			);
 		}
-		const halfVerticalFov = THREE.MathUtils.degToRad(this.options.camera.fov / 2);
-		const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * Math.max(this.options.camera.aspect, 0.1));
+	// 取景估算：透视相机用 fov/aspect；2D 正交相机用等效视场角（正交下按固定视角估算即可）
+	const isOrthoCamera = this.options.camera instanceof THREE.OrthographicCamera;
+	const halfVerticalFov = isOrthoCamera
+		? THREE.MathUtils.degToRad(25)
+		: THREE.MathUtils.degToRad((this.options.camera as THREE.PerspectiveCamera).fov / 2);
+	const cameraAspect = isOrthoCamera
+		? (this.options.camera as THREE.OrthographicCamera).right /
+			Math.max(0.001, (this.options.camera as THREE.OrthographicCamera).top)
+		: (this.options.camera as THREE.PerspectiveCamera).aspect;
+	const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * Math.max(cameraAspect, 0.1));
 		let requiredHeight = 0;
 		for (const { position, padding } of framingPoints) {
 			const horizontalOffset = Math.abs(position.x - target.x) + padding;

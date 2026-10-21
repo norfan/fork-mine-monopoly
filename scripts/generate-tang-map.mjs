@@ -9,6 +9,8 @@ import protobuf from "protobufjs";
 
 import { buildTangModels } from "./lib/tang-models.mjs";
 import { buildDistrictHouses } from "./lib/tang-houses.mjs";
+import { buildSpriteHouses, buildSpriteSigns } from "./lib/theme-sprite.mjs";
+import { buildTangTopArt } from "./lib/art-top-tang.mjs";
 import { buildRoleAvatars } from "./lib/make-role-avatars.mjs";
 import { buildTangMapData } from "./lib/tang-map-data.mjs";
 
@@ -18,15 +20,34 @@ const PROJECT_ROOT = join(__dirname, "..");
 const OUT_FPMAP = join(PROJECT_ROOT, "apps/client/public/offline-maps/tang-dynasty.fpmap");
 const OUT_JSON = join(PROJECT_ROOT, "test-assets/tang-map.json");
 
+// 俯视 2D 插画与圆地标
+const TANG_TOP_ART = buildTangTopArt();
+const SPRITE_SIGNS = buildSpriteSigns();
+// 角标/机会/命运/赋税 → 水平圆地标（原 3D 宫殿/牌坊/灯笼/城墙俯视不成立）
+const SIGN_MODEL_MAP = {
+	"t-corner-gong": "m-start",
+	"t-corner-yu": "m-jail",
+	"t-corner-chi": "m-free",
+	"t-corner-zhou": "m-goto",
+	"t-chance": "m-chance",
+	"t-fate": "m-fate",
+	"t-tax": "m-tax",
+};
+
 function main() {
-	// 1. 模型与图片资产
-	const models = [...buildTangModels(), ...buildDistrictHouses()];
+	// 1. 模型与图片资产：地产 → 俯视贴片；act 街头小景与 deco 装饰 → 保留 3D 立体（俯视有层次）
+	const keys = ["guannei", "jingji", "henan", "hedong", "hebei", "huainan", "jiangnan", "jiannan"];
+	const acts = buildDistrictHouses().filter((m) => m.id.startsWith("act-"));
+	const models = [...buildSpriteHouses(TANG_TOP_ART, keys), ...acts, ...SPRITE_SIGNS, ...buildTangModels()];
 	const cover = readFileSync(join(PROJECT_ROOT, "apps/client/public/offline-maps/cover-tang.png"));
 	const background = readFileSync(join(PROJECT_ROOT, "apps/client/public/offline-maps/background-tang.png"));
 	const avatars = buildRoleAvatars();
 
-	// 2. 地图数据
+	// 2. 地图数据（角标/特殊格换成圆地标模型）
 	const mapData = buildTangMapData();
+	for (const t of mapData.mapItemTypes) {
+		if (SIGN_MODEL_MAP[t.id]) t.modelId = SIGN_MODEL_MAP[t.id];
+	}
 
 	// 3. protobuf 序列化
 	const protoRoot = protobuf.loadSync(join(PROJECT_ROOT, "packages/utils/protos/game-map.proto"));

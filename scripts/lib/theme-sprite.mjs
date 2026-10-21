@@ -1,38 +1,45 @@
-// 2D 贴片模型生成：把 2D 插画 PNG 变成 GLB 平面（双面）+ 房主染色小房
-// - buildSpriteHouses：每地产 5 级（sprite + N 个染色小房，N=等级）
-// - buildSpriteSigns：四角格 + 机会/命运/赋税 的牌坊式贴片
+// 2D 贴片模型生成（俯视 2D 场景）：插画 PNG → 水平贴片（rotX -90° 躺平）+ 房主染色小房
+// - buildSpriteHouses：每地产 5 级（俯视插画 + N 个染色小房，N=等级）
+// - buildSpriteSigns：四角格 + 机会/命运/赋税 的水平圆地标
 // 输出条目 { id, name, filetype:"glb", glb } 与原 theme-houses 同结构，可直接替换
 import { buildSpriteGlb } from "./sprite-glb.mjs";
-import { GROUND, dim, lit, mix } from "./art-2d.mjs";
+import { dim, lit } from "./art-2d.mjs";
 import { Canvas } from "./png-painter.mjs";
 
 const SZ = 256;
-// 立绘尺寸：格心为原点，底部贴 y=0
-const SPRITE_W = 0.92;
-const SPRITE_H = 1.24;
+// 俯视贴片尺寸：格心为原点，平铺在 y≈0.02，占格 90%
+const SPRITE_SIZE = 0.9;
+const SPRITE_Y = 0.02;
 const HOUSE_CUBE = 0.09;
 
 const spriteModel = (id, name, parts) => ({ id, name, filetype: "glb", glb: buildSpriteGlb(parts) });
 
-/** 一个小房（染色 Cube），name 含 color → 引擎染房主色 */
+/** 俯视水平贴片 part */
+const flatSprite = (png) => ({
+	kind: "sprite",
+	tex: { png, w: SZ, h: SZ },
+	c: [0, SPRITE_Y, 0],
+	s: [SPRITE_SIZE, SPRITE_SIZE],
+	rotX: -Math.PI / 2,
+});
+
+/** 一个染色小房（Cube），name 含 color → 引擎染房主色 */
 function houseCube(x) {
-	return { kind: "cube", c: [x, 0.055, 0.16], s: [HOUSE_CUBE, HOUSE_CUBE, HOUSE_CUBE], color: [1, 1, 1], name: "color-house" };
+	return { kind: "cube", c: [x, 0.06, 0.12], s: [HOUSE_CUBE, HOUSE_CUBE, HOUSE_CUBE], color: [1, 1, 1], name: "color-house" };
 }
 
-/** 地产 5 级：sprite(插画) + (lv+1) 个染色小房 */
+/** 地产 5 级：俯视插画 + (lv+1) 个染色小房 */
 export function buildSpriteHouses(art, keys) {
 	const out = [];
 	for (const key of keys) {
 		const png = art[`${key}-built`];
 		if (!png) throw new Error(`buildSpriteHouses: 缺少插画 ${key}-built`);
 		for (let lv = 0; lv < 5; lv++) {
-			const parts = [
-				{ kind: "sprite", tex: { png, w: SZ, h: SZ }, c: [0, SPRITE_H / 2, 0], s: [SPRITE_W, SPRITE_H] },
-			];
+			const parts = [flatSprite(png)];
 			for (let n = 0; n <= lv; n++) {
 				const total = 5; // 每行最多 5 个，居中排布
-				const span = (total - 1) * 0.14;
-				const x = -span / 2 + n * 0.14;
+				const span = (total - 1) * 0.13;
+				const x = -span / 2 + n * 0.13;
 				parts.push(houseCube(x));
 			}
 			out.push(spriteModel(`house-${key}-${lv}`, `2D地产_${key}_${lv}级`, parts));
@@ -41,43 +48,18 @@ export function buildSpriteHouses(art, keys) {
 	return out;
 }
 
-/** 牌坊式贴片插画（四角格/机会/命运/赋税共用模板） */
+/** 俯视水平圆地标（四角格/机会/命运/赋税）：圆形底盘 + 图标 */
 function drawSign(c, d) {
-	// 天空与地面
-	c.vGradient(0, SZ, 0, GROUND, [214, 228, 238, 255], [186, 208, 222, 255]);
-	c.fillRect(0, GROUND, SZ, SZ, [150, 158, 150, 255]);
-	const cx = 128;
-	// 台基
-	c.fillRect(cx - 70, GROUND - 10, cx + 70, GROUND + 6, [168, 168, 164, 255]);
-	c.strokeRect(cx - 70, GROUND - 10, cx + 70, GROUND + 6, 2, dim([168, 168, 164, 255], 0.6));
-	// 双柱
-	for (const sx of [-1, 1]) {
-		const x = cx + sx * 52;
-		c.fillRect(x - 8, 76, x + 8, GROUND - 10, d.stone);
-		c.strokeRect(x - 8, 76, x + 8, GROUND - 10, 2, dim(d.stone, 0.6));
-		c.fillRect(x - 12, 68, x + 12, 78, dim(d.stone, 0.8));
-		c.fillRect(x - 11, GROUND - 12, x + 11, GROUND - 4, dim(d.stone, 0.7));
-	}
-	// 两道横梁
-	c.fillRect(cx - 74, 96, cx + 74, 106, d.stone);
-	c.strokeRect(cx - 74, 96, cx + 74, 106, 2, dim(d.stone, 0.6));
-	c.fillRect(cx - 68, 72, cx + 68, 82, d.stone);
-	c.strokeRect(cx - 68, 72, cx + 68, 82, 2, dim(d.stone, 0.6));
-	// 屋顶（梯形 + 脊）
-	c.fillTrapezoid(cx - 84, cx + 84, cx - 60, cx + 60, 52, 68, d.roof);
-	c.fillRect(cx - 64, 44, cx + 64, 52, d.roof);
-	c.fillRect(cx - 66, 40, cx + 66, 46, lit(d.roof, 0.3));
-	c.fillCircle(cx, 38, 5, lit(d.roof, 0.4));
-	// 中央图标区
-	c.fillRect(cx - 34, 112, cx + 34, 176, mix(d.badge, [255, 255, 255, 255], 0.08));
-	c.strokeRect(cx - 34, 112, cx + 34, 176, 3, dim(d.badge, 0.55));
-	d.icon(c, cx, 144, d);
-	// 柱头灯
-	for (const sx of [-1, 1]) c.fillCircle(cx + sx * 52, 90, 5, lit(d.roof, 0.2));
-}
-
-function drawTowerSign(c, { tint, accent }) {
-	void c; void tint; void accent;
+	const cx = 128, cy = 128;
+	// 底座阴影圈 + 石盘
+	c.fillCircle(cx, cy + 3, 92, dim(d.stone, 0.55));
+	c.fillCircle(cx, cy, 92, d.stone);
+	c.strokeCircle(cx, cy, 92, 5, dim(d.stone, 0.65));
+	c.strokeCircle(cx, cy, 82, 2, lit(d.stone, 0.3));
+	// 中央徽章
+	c.fillCircle(cx, cy, 52, d.badge);
+	c.strokeCircle(cx, cy, 52, 4, dim(d.badge, 0.55));
+	d.icon(c, cx, cy, d);
 }
 
 const SIGNS = [
@@ -152,10 +134,7 @@ export function buildSpriteSigns() {
 	for (const s of SIGNS) {
 		const c = new Canvas(SZ, SZ, [0, 0, 0, 0]);
 		drawSign(c, s);
-		out.push(spriteModel(`m-${s.id}`, `2D牌坊_${s.iconName}`, [
-			{ kind: "sprite", tex: { png: c.toPng(), w: SZ, h: SZ }, c: [0, 0.62, 0], s: [0.95, 1.24] },
-		]));
+		out.push(spriteModel(`m-${s.id}`, `2D地标_${s.iconName}`, [flatSprite(c.toPng())]));
 	}
 	return out;
 }
-void GROUND;

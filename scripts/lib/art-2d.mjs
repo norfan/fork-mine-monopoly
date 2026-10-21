@@ -139,3 +139,32 @@ export function signStrip(c, x0, x1, y, h, bg, fg, n = 3) {
 		c.fillRect(x0 + 4 + i * w, y + 3, x0 + 4 + (i + 1) * w - 2, y + h - 3, i % 2 ? fg : lit(fg, 0.25));
 	}
 }
+
+/** 俯视院落：地面 + 围墙 + 南侧院门（俯视 2D 建筑插画共用） */
+export function courtyard(c, x0, x1, y0, y1, ground, wall) {
+	c.fillRect(x0, y0, x1, y1, ground);
+	const t = 6;
+	c.strokeRect(x0, y0, x1, y1, t, wall);
+	c.strokeRect(x0 + t, y0 + t, x1 - t, y1 - t, 1, dim(wall, 0.55));
+	// 院门（南侧中间开口）
+	const gx = Math.round((x0 + x1) / 2);
+	c.fillRect(gx - 16, y1 - t, gx + 16, y1, ground);
+	c.fillRect(gx - 18, y1 - t - 3, gx - 15, y1, dim(wall, 0.65));
+	c.fillRect(gx + 15, y1 - t - 3, gx + 18, y1, dim(wall, 0.65));
+	c.fillRect(gx - 15, y1 - t - 3, gx + 15, y1 - t - 1, lit(wall, 0.35)); // 门楣
+	return gx;
+}
+
+/** 俯视树（树冠圆 + 中心阴） */
+export function topTree(c, cx, cy, r, leaf) {
+	c.fillCircle(cx, cy, r, leaf);
+	c.fillCircle(cx - r * 0.25, cy - r * 0.25, r * 0.55, lit(leaf, 0.2));
+	c.fillCircle(cx + r * 0.3, cy + r * 0.3, r * 0.35, dim(leaf, 0.75));
+}
+
+/** 俯视旗杆（底座圆 + 杆影） */
+export function topPole(c, cx, cy, r, flag, pole) {
+	c.fillCircle(cx, cy, r + 2, dim(pole, 0.5));
+	c.fillCircle(cx, cy, r, lit(flag, 0.3));
+	c.fillCircle(cx, cy, r * 0.5, dim(flag, 0.6));
+}

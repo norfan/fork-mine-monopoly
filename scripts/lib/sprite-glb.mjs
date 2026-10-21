@@ -1,7 +1,8 @@
 // 2D 贴片 GLB 构建器：带 PNG 纹理的竖直平面（双面）+ 可选纯色小盒（房主染色）
-// parts: [{ kind:"sprite", tex:{png,w,h}, c:[x,y,z], s:[w,h], rotY?, tint?:[r,g,b] 0..1, alpha? }
+// parts: [{ kind:"sprite", tex:{png,w,h}, c:[x,y,z], s:[w,h], rotY?, rotX?, tint?:[r,g,b] 0..1, alpha? }
 //         { kind:"cube",   c:[x,y,z], s:[w,h,d], color:[r,g,b], name? }]
 // 几何共享：单位平面 [-0.5,0.5]^2（面朝 +Z）+ 单位立方体；额外部分只有纹理 PNG bufferView
+// rotX=-PI/2 时平面躺平（法线朝上），用于俯视 2D 场景的地面贴片
 
 const PPOS = Buffer.from(new Float32Array([
 	-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0,
@@ -53,6 +54,10 @@ function pad4(buf, fill) {
 function quatY(rad) {
 	const h = rad / 2;
 	return [0, Math.sin(h), 0, Math.cos(h)];
+}
+function quatX(rad) {
+	const h = rad / 2;
+	return [Math.sin(h), 0, 0, Math.cos(h)];
 }
 
 /** 由贴片/小盒混合 parts 构建 GLB */
@@ -131,6 +136,7 @@ export function buildSpriteGlb(parts) {
 			scale: isCube ? p.s : [p.s[0], p.s[1], 1],
 		};
 		if (p.rotY) node.rotation = quatY(p.rotY);
+		if (p.rotX) node.rotation = quatX(p.rotX);
 		if (isCube && p.name) node.name = p.name;
 		nodes.push(node);
 		meshes.push({

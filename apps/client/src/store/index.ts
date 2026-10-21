@@ -293,6 +293,8 @@ export const useSettig = defineStore("setting", {
 			graphicQuality: "medium" as "low" | "medium" | "high",
 			// 阴影开关
 			enableShadow: false,
+			// 俯视 2D 渲染模式（正交相机锁定 90° 俯视）；?view=3d 可临时回退 3D 斜俯视
+			view2D: true,
 			enableModelAnimation: true,
 			// 地图缓存最大容量（MB），默认 500MB
 			mapCacheMaxSizeMB: 500,
@@ -325,6 +327,26 @@ export const useSettig = defineStore("setting", {
 				const cores = navigator.hardwareConcurrency || 4;
 				this.graphicQuality = cores <= 4 ? "low" : "medium";
 				console.warn("[画质设置] localStorage 读取失败，使用自动检测:", this.graphicQuality);
+			}
+		},
+		// 初始化俯视 2D 模式（URL ?view=3d / ?view=2d 优先，其次 localStorage）
+		initViewMode() {
+			try {
+				const q = new URLSearchParams(location.search);
+				const view = q.get("view");
+				if (view === "3d") {
+					this.view2D = false;
+					return;
+				}
+				if (view === "2d") {
+					this.view2D = true;
+					return;
+				}
+				const saved = localStorage.getItem("view2D");
+				if (saved === "0") this.view2D = false;
+				else if (saved === "1") this.view2D = true;
+			} catch (e) {
+				console.warn("[设置] 读取视角模式失败，使用默认 2D 俯视:", e);
 			}
 		},
 		// 获取实际像素比

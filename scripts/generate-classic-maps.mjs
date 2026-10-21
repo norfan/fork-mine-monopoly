@@ -11,9 +11,9 @@ import * as modern from "./lib/theme-houses-modern.mjs";
 import * as sanguo from "./lib/theme-houses-sanguo.mjs";
 import * as jiangnan from "./lib/theme-houses-jiangnan.mjs";
 import { buildSpriteHouses, buildSpriteSigns } from "./lib/theme-sprite.mjs";
-import { buildModernArt } from "./lib/art-modern-2d.mjs";
-import { buildSanguoArt } from "./lib/art-sanguo-2d.mjs";
-import { buildJiangnanArt } from "./lib/art-jiangnan-2d.mjs";
+import { buildModernTopArt } from "./lib/art-top-modern.mjs";
+import { buildSanguoTopArt } from "./lib/art-top-sanguo.mjs";
+import { buildJiangnanTopArt } from "./lib/art-top-jiangnan.mjs";
 import { buildCastAvatars } from "./lib/make-avatars-cast.mjs";
 import { buildSanguoAvatars } from "./lib/make-avatars-sanguo.mjs";
 import { buildCovers } from "./lib/make-covers.mjs";
@@ -24,8 +24,8 @@ const PROJECT_ROOT = join(__dirname, "..");
 const OUT_DIR = join(PROJECT_ROOT, "apps/client/public/offline-maps");
 const OUT_JSON_DIR = join(PROJECT_ROOT, "test-assets");
 
-// 2D 插画（256×256 PNG）与牌坊贴片
-const ART = { modern: buildModernArt(), sanguo: buildSanguoArt(), jiangnan: buildJiangnanArt() };
+// 俯视 2D 插画（256×256 PNG）与圆地标贴片
+const ART = { modern: buildModernTopArt(), sanguo: buildSanguoTopArt(), jiangnan: buildJiangnanTopArt() };
 const SPRITE_SIGNS = buildSpriteSigns();
 
 // 装配：地产/四角/特殊格 → 2D 贴片；行动格底座/中心装饰 → 保留 3D 小景
