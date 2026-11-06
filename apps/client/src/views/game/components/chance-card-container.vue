@@ -30,10 +30,11 @@ const getIconUrl = (card: ChanceCardClientInfo) => {
 	return resource ? resource.url : "";
 };
 
-const _canUseChanceCard = computed(() => utilStore.canUseCard);
+// 暂停期间禁用机会卡，避免倒计时冻结时误用卡
+const _canUseChanceCard = computed(() => utilStore.canUseCard && !utilStore.gamePaused);
 
 async function handleChanceCardClick(card: ChanceCardClientInfo) {
-	if (!utilStore.canUseCard) return;
+	if (!utilStore.canUseCard || utilStore.gamePaused) return;
 	showTargetSelector(card.type, {
 		title: `使用机会卡: “${card.name}”`,
 		confirmText: "使用",
@@ -53,7 +54,7 @@ async function handleChanceCardClick(card: ChanceCardClientInfo) {
 
 <template>
 	<div class="chance-card-container" :style="{ '--num': _chanceCardsList.length }">
-		<div v-show="utilStore.canUseCard" class="tips">点击卡片使用机会卡</div>
+		<div v-show="utilStore.canUseCard && !utilStore.gamePaused" class="tips">点击卡片使用机会卡</div>
 		<TransitionGroup name="card">
 			<ChanceCard
 				@click="handleChanceCardClick(card)"

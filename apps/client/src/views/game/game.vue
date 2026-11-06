@@ -37,7 +37,6 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 	import { storeToRefs } from "pinia";
 	import UiRenderer from "@src/components/utils/ui-renderer/ui-renderer.vue";
 	import FpErrorBoundary from "@src/components/utils/fp-error-boundary/index.vue";
-	import FpDialog from "@src/components/utils/fp-dialog/fp-dialog.vue";
 	import { CollapsiblePanel } from "@src/components/collapsible-panel";
 	//pinia仓库
 	const mapDataStore = useMapData();
@@ -55,13 +54,7 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 		utilStore.changeTurn(localPartyStore.activePlayerId === localPartyStore.currentTurnPlayerId);
 	}
 
-	// 暂停弹窗可见性：只读投影 gamePaused，禁止通过关闭按钮/遮罩点击关闭（只能点"继续游戏"）
-	const pauseDialogVisible = computed({
-		get: () => utilStore.gamePaused,
-		set: () => {},
-	});
-
-	// 暂停弹窗上的"继续游戏"：房主直接恢复，其他玩家请求房主代为恢复
+	// 暂停提示条上的"继续游戏"：房主直接恢复，其他玩家请求房主代为恢复
 	function handleResumeGame() {
 		socketClient?.resumeGame();
 	}
@@ -79,7 +72,8 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 	}
 
 	function handleRollDice() {
-		if (socketClient) {
+		// 暂停期间不响应操作，避免倒计时被冻结时误触发掷骰
+		if (socketClient && !utilStore.gamePaused) {
 			socketClient.rollDice();
 		}
 	}
@@ -247,7 +241,7 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 
 <template>
 	<FpErrorBoundary>
-		<div class="game-page">
+		<div class="game-page" :class="{ 'is-paused': utilStore.gamePaused }">
 			<canvas id="game-canvas" :width="windowWidth" :height="windowHeight"></canvas>
 			<div class="ui-container">
 				<CollapsiblePanel
@@ -305,50 +299,58 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 
 			<scoreboard />
 
-			<!-- 游戏暂停弹窗：使用 fp-dialog 统一样式，暂停期间不可关闭，只能点"继续游戏" -->
-			<FpDialog v-model:visible="pauseDialogVisible" :closable="false" hidden-footer title="游戏已暂停">
-				<div class="pause-dialog-content">
-					<FontAwesomeIcon icon="pause" class="pause-dialog-icon" />
-					<p class="pause-dialog-desc">处理完其他事情后，点击下方按钮即可继续游戏</p>
-					<button class="pause-resume-btn" @click="handleResumeGame">
-						<FontAwesomeIcon icon="play" style="margin-right: 0.4rem" />
-						继续游戏
-					</button>
-				</div>
-			</FpDialog>
+			<!-- 暂停提示：非模态、不遮挡棋盘/地块详情/游戏记录，暂停期间仍可自由查看信息 -->
+			<div v-if="utilStore.gamePaused" class="game-pause-notice">
+				<FontAwesomeIcon icon="pause" class="pause-notice-icon" />
+				<span class="pause-notice-text">游戏已暂停 · 可自由查看棋盘、地块详情与游戏记录</span>
+				<button type="button" class="pause-resume-btn" @click="handleResumeGame">
+					<FontAwesomeIcon icon="play" style="margin-right: 0.35rem" />
+					继续游戏
+				</button>
+			</div>
 		</div>
 	</FpErrorBoundary>
 </template>
 
 <style lang="scss" scoped>
-/* 暂停弹窗内容（fp-dialog 内） */
-.pause-dialog-content {
+/* 暂停提示条：非模态，容器本身不拦截点击，只有「继续游戏」按钮可点 */
+.game-pause-notice {
+	position: absolute;
+	top: 0.6rem;
+	left: 0.6rem;
+	z-index: var(--z-chat-log);
 	display: flex;
-	flex-direction: column;
 	align-items: center;
-	gap: 0.9rem;
-	text-align: center;
+	gap: 0.6rem;
+	max-width: min(32rem, calc(100vw - 1.2rem));
+	padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+	border-radius: 999px;
+	background-color: rgba(0, 0, 0, 0.72);
+	color: var(--fp-color-text-white, #fff);
+	box-shadow: var(--fp-shadow-md);
+	font-size: 0.9rem;
 	user-select: none;
+	pointer-events: none;
 }
 
-.pause-dialog-icon {
-	font-size: 2.2rem;
-	color: var(--fp-color-primary);
-}
-
-.pause-dialog-desc {
-	margin: 0;
-	font-size: 1rem;
+.pause-notice-icon {
+	flex: none;
 	color: var(--fp-color-tertiary);
 }
 
+.pause-notice-text {
+	line-height: 1.35;
+}
+
 .pause-resume-btn {
-	padding: 0.6rem 1.8rem;
+	flex: none;
+	pointer-events: auto;
+	padding: 0.4rem 0.9rem;
 	border: none;
-	border-radius: 0.6rem;
+	border-radius: 999px;
 	background: var(--fp-color-primary);
 	color: #fff;
-	font-size: 1.05rem;
+	font-size: 0.9rem;
 	font-weight: 600;
 	cursor: pointer;
 	transition: opacity 0.2s;
@@ -356,6 +358,23 @@ import LocalPartyTurnHandoff from "./components/local-party-turn-handoff.vue";
 
 .pause-resume-btn:hover {
 	opacity: 0.9;
+}
+
+/* 暂停期间禁用操作面板 / 机会卡，避免倒计时冻结时误操作 */
+.game-page.is-paused {
+	:deep(.game-buttons-panel),
+	:deep(.chance-card-container) {
+		opacity: 0.55;
+		filter: grayscale(0.45);
+		pointer-events: none !important;
+	}
+
+	// .ui-container 会给所有后代显式设置 pointer-events: initial，
+	// 必须一并覆盖后代才能真正阻断交互。
+	:deep(.game-buttons-panel *),
+	:deep(.chance-card-container *) {
+		pointer-events: none !important;
+	}
 }
 
 .game-page {

@@ -54,13 +54,14 @@ export class MonopolyClient {
 		this.session = new WebRtcSessionManager({
 			iceServer: options.iceServer,
 			onMessage: (data) => {
-				// PauseGame/ResumeGame 由专用暂停弹窗展示，不走通用 toast，避免与 handleGamePause 重复弹出
+				// PauseGame/ResumeGame 由专用暂停弹窗展示；骰子点数由动画呈现，都不走通用 toast。
 				if (
 					data.msg &&
 					data.type !== SocketMsgType.LeaveRoom &&
 					data.type !== SocketMsgType.GameOver &&
 					data.type !== SocketMsgType.PauseGame &&
-					data.type !== SocketMsgType.ResumeGame
+					data.type !== SocketMsgType.ResumeGame &&
+					data.type !== SocketMsgType.RollDiceResult
 				) {
 					useLoading().hideLoading();
 					FPMessage({ type: data.msg.type, message: data.msg.content });

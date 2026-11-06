@@ -912,9 +912,10 @@ export class Room {
 			user.roleId = "";
 		});
 		//换地图取消所有玩家准备状态
-		if (data.from === "server") {
+		// 内置离线地图与服务器地图同属安全来源：只广播清单/地图 ID，不触发非官方地图确认，也不做分块传输。
+		if (data.from === "server" || data.from === "offline") {
 			this.mapInfo = data;
-			//如果地图来源为服务器 (安全的)
+			//如果地图来源为服务器或客户端内置 (安全的)
 			// 通知所有客户端显示 loading
 			this.roomBroadcast({
 				type: SocketMsgType.LoadingControl,

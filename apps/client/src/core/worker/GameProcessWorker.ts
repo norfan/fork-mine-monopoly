@@ -54,6 +54,7 @@ import {
 	FormDialogResult,
 	FormField,
 	MoneyTag,
+	MoneyTagType,
 	ButtonConfig,
 	ButtonRegisterMessage,
 	ButtonStateChangedMessage,
@@ -68,7 +69,7 @@ import {
 import { allRuntimeEnums } from "./runtime-enums";
 import { ButtonController } from "./ButtonController";
 
-import { Player, type MapMovementHistoryEntry } from "./class/Player";
+import { Player, type MapMovementHistoryEntry, type MoneyChangeRecord } from "./class/Player";
 import { Property } from "./class/Property";
 import { ChanceCard } from "./class/ChanceCard";
 import { compileTsToJs, randomString } from "@src/utils";
@@ -376,6 +377,14 @@ async function handleSetPropertyOwner(
 
 	await property.setOwner(newOwner);
 
+	const ownerText = (ownerId: string | undefined) =>
+		ownerId ? gameProcess.createGameLinkItem(GameLinkItem.Player, ownerId) : "无主";
+	gameProcess.gameLogBroadcast(
+		`资产变动：地皮 ${gameProcess.createGameLinkItem(GameLinkItem.Property, property.id)} 归属 ${ownerText(
+			oldOwner?.id,
+		)} → ${ownerText(newOwner?.id)}`,
+	);
+
 	// 广播游戏状态
 	gameProcess.gameDataBroadcast();
 
@@ -590,6 +599,8 @@ export class GameProcess implements IGameProcess {
 	private timeoutList: any[] = []; //计时器列表
 	private intervalTimerList: any[] = []; //计时器列表
 	private gameLogList: GameLog[] = [];
+	/** 当前资金结算的业务上下文（含可点击链接），由具体业务点在扣款/收款前临时设置 */
+	private settlementContext: string = "";
 
 	public currentMultiplier: number = 1;
 
@@ -1584,6 +1595,8 @@ export class GameProcess implements IGameProcess {
 			);
 			player.isAI = Boolean(u.isAI);
 			player.setBankruptcyHandler((bankruptedPlayer) => this.releaseBankruptedPlayerAssets(bankruptedPlayer));
+			// 所有资金变动（含自定义地图脚本里的 gain/cost）统一写入游戏记录。
+			player.setMoneyChangeObserver((changedPlayer, record) => this.logMoneyChange(changedPlayer, record));
 			player.setPositionIndex(0);
 			const startMapItemId = this.mapData.startMapItemId ?? this.mapData.mapIndex[0];
 			if (!startMapItemId) throw new Error("地图缺少有效起点，无法初始化玩家位置");
@@ -1885,18 +1898,15 @@ export class GameProcess implements IGameProcess {
 				const diceResult = dices.map((d) => d.roll());
 
 				//向客户端发送骰子结果
-				const msgToRollDice: ServerSocketMessage = {
-					type: SocketMsgType.RollDiceResult,
-					source: SocketMsgSource.Server,
-					data: {
-						rollDiceResult: diceResult,
-						rollDicePlayerId: player.id,
-					},
-					msg: {
-						type: "info",
-						content: `${player.name} 摇到的点数是: ${diceResult.map((d) => d.result).join("-")}`,
-					},
-				};
+			// 点数由骰子动画与骰子面板呈现，不再额外弹出顶部文字提示。
+			const msgToRollDice: ServerSocketMessage = {
+				type: SocketMsgType.RollDiceResult,
+				source: SocketMsgSource.Server,
+				data: {
+					rollDiceResult: diceResult,
+					rollDicePlayerId: player.id,
+				},
+			};
 				this.gameBroadcast(msgToRollDice);
 
 				//等待动画
@@ -1961,37 +1971,17 @@ export class GameProcess implements IGameProcess {
 						}
 					} else {
 						//地产是别人的
-						this.setCurrentEventName(`等待${arrivedPlayer.name} 给过路费`);
-						const ownerPlayer = this.getPlayerById(owner.id);
-						if (!ownerPlayer) return payload;
-						if (owner !== undefined && toll !== undefined) {
+					this.setCurrentEventName(`等待${arrivedPlayer.name} 给过路费`);
+					if (!this.players.has(owner.id)) return payload;
+					if (owner !== undefined && toll !== undefined) {
+						// 付款与收款各产生一条详细结算记录，不再弹顶部提示。
+						const propertyLink = this.createGameLinkItem(GameLinkItem.Property, property.id);
+						const context = `过路费结算 · 地皮 ${propertyLink}（LV${property.level}，应收 ${this.formatMoney(toll)}￥）`;
+						await this.withSettlementContext(context, async () => {
 							const res = await arrivedPlayer.cost(toll, MoneyTag.PROPOERTY, owner);
-							this.messageNotify([arrivedPlayer.id], {
-								type: "error",
-								content: `你到达了${owner.name}的地皮: ${property.name}，支付了${res.actualCost}￥过路费`,
-							});
 							await owner.gain(res.actualCost, MoneyTag.PROPOERTY, arrivedPlayer);
-							this.messageNotify([ownerPlayer.id], {
-								type: "success",
-								content: `${arrivedPlayer.name}到达了你的地皮: ${property.name}，支付了${res.actualCost}￥过路费`,
-							});
-							this.messageNotify(
-								Array.from(this.players.values())
-									.filter((p) => p.id !== arrivedPlayer.id && p.id !== owner.id)
-									.map((p) => p.id),
-								{
-									type: "info",
-									content: `${arrivedPlayer.name}到达了${owner.name}的地皮: ${property.name}，支付了${res.actualCost}￥过路费`,
-								},
-							);
-
-							this.gameLogBroadcast(
-								`${this.createGameLinkItem(GameLinkItem.Player, arrivedPlayer.id)} 到达了 ${this.createGameLinkItem(
-									GameLinkItem.Player,
-									owner.id,
-								)} 的地皮: ${this.createGameLinkItem(GameLinkItem.Property, property.id)}，支付了 ${res.actualCost}￥ 过路费`,
-							);
-						}
+						});
+					}
 
 						this.gameDataBroadcast();
 					}
@@ -2044,6 +2034,7 @@ export class GameProcess implements IGameProcess {
 
 	private async releaseBankruptedPlayerAssets(player: Player) {
 		const properties = [...player.properties];
+		const cardCount = player.chanceCards.length;
 		for (const property of properties) {
 			await property.setOwner(undefined);
 			await property.setLevel(0);
@@ -2051,6 +2042,14 @@ export class GameProcess implements IGameProcess {
 		player.chanceCards = [];
 		player.isStop = 0;
 		player.stop = 0;
+		const propertyLinks = properties
+			.map((property) => this.createGameLinkItem(GameLinkItem.Property, property.id))
+			.join("、");
+		this.gameLogBroadcast(
+			`${this.createGameLinkItem(GameLinkItem.Player, player.id)} 破产清算：资金 ${this.formatMoney(
+				player.money,
+			)}￥，释放 ${properties.length} 块地皮${propertyLinks ? `（${propertyLinks}）` : ""}、清空 ${cardCount} 张机会卡`,
+		);
 		this.gameDataBroadcast();
 	}
 
@@ -2102,12 +2101,7 @@ export class GameProcess implements IGameProcess {
 					player.isStop--; // 减少停止计数
 					await player.commandBus.execute({ type: "player.round.skip", payload: { player } });
 
-					// 根据剩余暂停次数显示不同的提示
-					if (player.isStop === 0) {
-						this.msgNotifyBroadcast("info", `${player.name} 暂停中，下一回合将恢复`);
-					} else {
-						this.msgNotifyBroadcast("info", `${player.name} 暂停中，还需跳过 ${player.isStop} 回合`);
-					}
+					// 暂停/跳过属于回合提醒，不弹提示也不写游戏记录。
 					continue; // 跳过此玩家的回合
 				}
 
@@ -2157,16 +2151,22 @@ export class GameProcess implements IGameProcess {
 			data: undefined,
 		};
 		if (player.money >= property.sellCost) {
-			await property.setOwner(player);
-			this.gameDataBroadcast();
-			this.msgNotifyBroadcast("info", `${player.name} 买下了地皮 ${property.name}`);
-			this.gameLogBroadcast(
-				`${this.createGameLinkItem(GameLinkItem.Player, player.id)} 买下了地皮 ${this.createGameLinkItem(
-					GameLinkItem.Property,
-					property.id,
-				)}`,
+			const propertyLink = this.createGameLinkItem(GameLinkItem.Property, property.id);
+			const playerLink = this.createGameLinkItem(GameLinkItem.Player, player.id);
+			const before = player.money;
+			await this.withSettlementContext(
+				`购买地皮 ${propertyLink}（售价 ${this.formatMoney(property.sellCost)}￥）`,
+				async () => {
+					await property.setOwner(player);
+					await player.cost(property.sellCost, MoneyTag.SYSTEM);
+				},
 			);
-			await player.cost(property.sellCost, MoneyTag.SYSTEM);
+			this.gameLogBroadcast(
+				`${playerLink} 资产变动：获得地皮 ${propertyLink}（持有 ${player.properties.length} 块，售价 ${this.formatMoney(
+					property.sellCost,
+				)}￥，资金 ${this.formatMoney(before)}￥ → ${this.formatMoney(player.money)}￥）`,
+			);
+			this.gameDataBroadcast();
 		} else {
 			msgToSend.msg = { type: "error", content: "不够钱啊穷鬼" };
 			sendToUsers([player.id], msgToSend);
@@ -2180,16 +2180,23 @@ export class GameProcess implements IGameProcess {
 			data: undefined,
 		};
 		if (player.money >= property.buildCost) {
-			await property.levelUp();
-			this.gameDataBroadcast();
-			this.msgNotifyBroadcast("info", `${player.name}把地皮${property.name}升到了${property.level}级`);
-			this.gameLogBroadcast(
-				`${this.createGameLinkItem(GameLinkItem.Player, player.id)} 把地皮 ${this.createGameLinkItem(
-					GameLinkItem.Property,
-					property.id,
-				)} 升到了 ${property.level} 级`,
+			const propertyLink = this.createGameLinkItem(GameLinkItem.Property, property.id);
+			const playerLink = this.createGameLinkItem(GameLinkItem.Player, player.id);
+			const beforeLevel = property.level;
+			const before = player.money;
+			await this.withSettlementContext(
+				`升级地皮 ${propertyLink}（LV${beforeLevel} → LV${beforeLevel + 1}，造价 ${this.formatMoney(property.buildCost)}￥）`,
+				async () => {
+					await property.levelUp();
+					await player.cost(property.buildCost, MoneyTag.SYSTEM);
+				},
 			);
-			await player.cost(property.buildCost, MoneyTag.SYSTEM);
+			this.gameLogBroadcast(
+				`${playerLink} 资产变动：地皮 ${propertyLink} 升至 LV${property.level}（造价 ${this.formatMoney(
+					property.buildCost,
+				)}￥，资金 ${this.formatMoney(before)}￥ → ${this.formatMoney(player.money)}￥）`,
+			);
+			this.gameDataBroadcast();
 		} else {
 			msgToSend.msg = { type: "error", content: "不够钱啊穷鬼" };
 			sendToUsers([player.id], msgToSend);
@@ -2245,16 +2252,15 @@ export class GameProcess implements IGameProcess {
 		}
 
 		try {
-			const cardName = chanceCard.getName();
-			const sourceLink = this.createGameLinkItem(GameLinkItem.Player, sourcePlayer.id);
 			const cardLink = this.createGameLinkItem(GameLinkItem.ChanceCard, chanceCard.getSourceId());
 
 			// 4. 根据类型解析目标，然后统一执行：动画 → 等待 → effectCode
+			//    用卡行为本身不写记录；卡内脚本造成的资金变动由统一埋点自动记录，并带上这里的原因上下文。
 			switch (chanceCard.getType()) {
 				case TargetSelectType.ToSelf: {
-					await this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, sourcePlayer, [sourcePlayer.id]);
-					this.msgNotifyBroadcast("info", `${sourcePlayer.name} 对自己使用了机会卡: "${cardName}"`);
-					this.gameLogBroadcast(`${sourceLink} 对自己使用了机会卡: ${cardLink}`);
+					await this.withSettlementContext(`使用机会卡 ${cardLink}（目标：自己）`, () =>
+						this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, sourcePlayer, [sourcePlayer.id]),
+					);
 					break;
 				}
 
@@ -2262,26 +2268,20 @@ export class GameProcess implements IGameProcess {
 				case TargetSelectType.ToPlayer: {
 					const targetPlayer = this.players.get(targetIdList[0]);
 					if (!targetPlayer) throw new Error("目标玩家不存在");
-					await this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetPlayer, [targetPlayer.id]);
 					const targetLink = this.createGameLinkItem(GameLinkItem.Player, targetPlayer.id);
-					this.msgNotifyBroadcast(
-						"info",
-						`${sourcePlayer.name} 对玩家 ${targetPlayer.name} 使用了机会卡: "${cardName}"`,
+					await this.withSettlementContext(`使用机会卡 ${cardLink}（目标：玩家 ${targetLink}）`, () =>
+						this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetPlayer, [targetPlayer.id]),
 					);
-					this.gameLogBroadcast(`${sourceLink} 对玩家 ${targetLink} 使用了机会卡: ${cardLink}`);
 					break;
 				}
 
 				case TargetSelectType.ToProperty: {
 					const targetProperty = this.properties.get(targetIdList[0]);
 					if (!targetProperty) throw new Error("目标建筑/地皮不存在");
-					await this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetProperty, [targetProperty.id]);
 					const targetLink = this.createGameLinkItem(GameLinkItem.Property, targetProperty.id);
-					this.msgNotifyBroadcast(
-						"info",
-						`${sourcePlayer.name} 对地皮 ${targetProperty.name} 使用了机会卡: "${cardName}"`,
+					await this.withSettlementContext(`使用机会卡 ${cardLink}（目标：地皮 ${targetLink}）`, () =>
+						this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetProperty, [targetProperty.id]),
 					);
-					this.gameLogBroadcast(`${sourceLink} 对地皮 ${targetLink} 使用了机会卡: ${cardLink}`);
 					break;
 				}
 
@@ -2293,12 +2293,10 @@ export class GameProcess implements IGameProcess {
 					if (!this.getMapPathNodeIds().has(targetMapItemId)) {
 						throw new Error("目标地图项不是地图路径节点");
 					}
-					await this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetMapItemId, [targetMapItem.id]);
-					this.msgNotifyBroadcast(
-						"info",
-						`${sourcePlayer.name} 对格子 ${targetMapItem.type.name} 使用了机会卡: "${cardName}"`,
+					await this.withSettlementContext(
+						`使用机会卡 ${cardLink}（目标：格子 ${targetMapItem.type.name}）`,
+						() => this.executeChanceCardWithAnimation(sourcePlayer, chanceCard, targetMapItemId, [targetMapItem.id]),
 					);
-					this.gameLogBroadcast(`${sourceLink} 对格子 ${targetMapItem.id} 使用了机会卡: ${cardLink}`);
 					break;
 				}
 
@@ -2308,17 +2306,13 @@ export class GameProcess implements IGameProcess {
 
 			// 5. 成功后的通用处理
 			await sourcePlayer.loseCard(chanceCardId); // 扣除卡片
+			this.gameLogBroadcast(
+				`${this.createGameLinkItem(GameLinkItem.Player, sourcePlayer.id)} 资产变动：消耗机会卡 ${cardLink}（剩余 ${
+					sourcePlayer.chanceCards.length
+				} 张）`,
+			);
 
-			// 发送成功通知给当前玩家
-			this.sendToPlayer(sourcePlayer.id, {
-				type: SocketMsgType.MsgNotify,
-				source: SocketMsgSource.Server,
-				data: undefined,
-				msg: {
-					type: "success",
-					content: `机会卡 ${cardName} 使用成功！`,
-				},
-			});
+			// 使用成功不再弹顶部提示，结果由动画、游戏记录与操作回调呈现。
 
 			// 发送操作回调
 			sendChanceCardCallback(sourcePlayer.id, false);
@@ -2369,14 +2363,9 @@ export class GameProcess implements IGameProcess {
 			if (!mapEvent) throw Error("找不到对应的MapEvent");
 			// 是到达触发的事件
 			if (mapEvent.type === MapEventType.ArrivedEvent) {
-				await mapEvent.fn(arrivedPlayer, this);
-				this.msgNotifyBroadcast("info", `${arrivedPlayer.name} 触发了地图事件: ${mapEvent.name}`);
-				this.gameLogBroadcast(
-					`${this.createGameLinkItem(GameLinkItem.Player, arrivedPlayer.id)} 触发了地图事件: ${this.createGameLinkItem(
-						GameLinkItem.ArrivedEvent,
-						mapEvent.id,
-					)}`,
-				);
+				const eventLink = this.createGameLinkItem(GameLinkItem.ArrivedEvent, mapEvent.id);
+				// 事件本身不写记录；事件脚本造成的资金变动由统一埋点自动记录。
+				await this.withSettlementContext(`触发地图事件 ${eventLink}`, () => mapEvent.fn(arrivedPlayer, this));
 				this.gameDataBroadcast();
 			}
 		}
@@ -2406,14 +2395,8 @@ export class GameProcess implements IGameProcess {
 			if (mapEvent.type !== MapEventType.PassedEvent) continue;
 
 			// 直接 await 执行经过事件，不推入事件栈
-			await mapEvent.fn(player, this);
-			this.msgNotifyBroadcast("info", `${player.name} 经过了: ${mapEvent.name} 触发事件`);
-			this.gameLogBroadcast(
-				`${this.createGameLinkItem(
-					GameLinkItem.Player,
-					player.id,
-				)} 触发了地图事件: ${this.createGameLinkItem(GameLinkItem.ArrivedEvent, mapEvent.id)}`,
-			);
+			const eventLink = this.createGameLinkItem(GameLinkItem.ArrivedEvent, mapEvent.id);
+			await this.withSettlementContext(`触发地图事件 ${eventLink}`, () => mapEvent.fn(player, this));
 			this.gameDataBroadcast();
 		}
 	}
@@ -4400,7 +4383,7 @@ export class GameProcess implements IGameProcess {
 			source: SocketMsgSource.Server,
 			data: playerId,
 		});
-		this.gameLogBroadcast(`---接下来是 ${this.createGameLinkItem(GameLinkItem.Player, playerId)} 的回合---`);
+		// 回合提醒属于不重要信息，只靠回合广播与 UI 高亮呈现，不再写入游戏记录。
 	}
 
 	public sendToPlayer(id: string, msg: ServerSocketMessage) {
@@ -4432,6 +4415,54 @@ export class GameProcess implements IGameProcess {
 			data: gameLog,
 			source: SocketMsgSource.Server,
 		});
+	}
+
+	/** 在指定业务上下文中执行资金变动，保证这段时间内产生的每一笔流水都带上原因。 */
+	private async withSettlementContext<T>(context: string, fn: () => Promise<T> | T): Promise<T> {
+		const previous = this.settlementContext;
+		this.settlementContext = context;
+		try {
+			return await fn();
+		} finally {
+			this.settlementContext = previous;
+		}
+	}
+
+	private describeMoneyTag(tag?: MoneyTagType): string {
+		switch (tag) {
+			case MoneyTag.PROPOERTY:
+				return "地产资金结算";
+			case MoneyTag.CARD:
+				return "机会卡资金结算";
+			case MoneyTag.PLAYER:
+				return "玩家间资金结算";
+			case MoneyTag.SYSTEM:
+				return "系统资金结算";
+			default:
+				return tag ? `事件资金结算（${tag}）` : "资金结算";
+		}
+	}
+
+	private formatMoney(value: number): string {
+		return Math.round(value).toLocaleString("en-US");
+	}
+
+	/** 把一笔资金变动写成详细的游戏记录：金额、变动前后资金、交易对手与业务原因。 */
+	private logMoneyChange(player: Player, record: MoneyChangeRecord) {
+		// 地图脚本里存在 0 元结算（例如未购买彩票时仍会调用 cost(0)），这类资金
+		// 前后没有变化的流水只会干扰阅读。资金不足导致一分未扣（success=false）
+		// 仍保留，方便看出结算失败与应付金额。
+		if (record.before === record.after && record.success) return;
+		const reason = this.settlementContext || this.describeMoneyTag(record.tag);
+		const playerLink = this.createGameLinkItem(GameLinkItem.Player, player.id);
+		const counterpart = record.counterpartId
+			? `，对手 ${this.createGameLinkItem(GameLinkItem.Player, record.counterpartId)}`
+			: "";
+		const sign = record.direction === "gain" ? "+" : record.direction === "cost" ? "−" : "=";
+		const amount = `${sign}${this.formatMoney(record.actual)}￥`;
+		const balance = `资金 ${this.formatMoney(record.before)}￥ → ${this.formatMoney(record.after)}￥`;
+		const shortfall = !record.success ? `（应付 ${this.formatMoney(record.requested)}￥，资金不足）` : "";
+		this.gameLogBroadcast(`${playerLink} ${reason}：${amount}（${balance}）${counterpart}${shortfall}`);
 	}
 
 	public gameBroadcast(msg: ServerSocketMessage) {

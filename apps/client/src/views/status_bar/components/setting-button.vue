@@ -167,7 +167,6 @@ const qualityLabels = {
 const tempLockRole = ref(settingStore.lockRole);
 const tempEnableTurnFocus = ref(settingStore.enableTurnFocus);
 const tempChatRenderMode = ref<"danmaku" | "bubble">(settingStore.chatRenderMode);
-const tempPropertyInfoTrigger = ref(settingStore.propertyInfoTrigger);
 const tempGraphicQuality = ref<"low" | "medium" | "high">(settingStore.graphicQuality);
 const tempEnableShadow = ref(settingStore.enableShadow);
 const tempEnableModelAnimation = ref(settingStore.enableModelAnimation);
@@ -184,7 +183,6 @@ watch(settingVisible, (isOpen) => {
 		tempLockRole.value = settingStore.lockRole;
 		tempEnableTurnFocus.value = settingStore.enableTurnFocus;
 		tempChatRenderMode.value = settingStore.chatRenderMode;
-		tempPropertyInfoTrigger.value = settingStore.propertyInfoTrigger;
 		tempGraphicQuality.value = settingStore.graphicQuality;
 		tempEnableModelAnimation.value = settingStore.enableModelAnimation;
 		tempEnableShadow.value = settingStore.enableShadow;
@@ -203,7 +201,6 @@ const hasChanges = computed(() => {
 		tempLockRole.value !== settingStore.lockRole ||
 		tempEnableTurnFocus.value !== settingStore.enableTurnFocus ||
 		tempChatRenderMode.value !== settingStore.chatRenderMode ||
-		tempPropertyInfoTrigger.value !== settingStore.propertyInfoTrigger ||
 		tempGraphicQuality.value !== settingStore.graphicQuality ||
 		tempEnableShadow.value !== settingStore.enableShadow ||
 		tempEnableModelAnimation.value !== settingStore.enableModelAnimation ||
@@ -262,10 +259,6 @@ const applySettings = () => {
 
 	if (tempChatRenderMode.value !== settingStore.chatRenderMode) {
 		settingStore.chatRenderMode = tempChatRenderMode.value;
-	}
-
-	if (tempPropertyInfoTrigger.value !== settingStore.propertyInfoTrigger) {
-		settingStore.propertyInfoTrigger = tempPropertyInfoTrigger.value;
 	}
 
 	// 应用画质设置
@@ -479,36 +472,9 @@ const applySettings = () => {
 				</div>
 
 				<div class="setting-item">
-					<div class="label">地图信息触发方式</div>
+					<div class="label">地块详情</div>
 					<div class="content">
-						<div>
-							<input
-								type="radio"
-								name="property-info-trigger"
-								value="hover"
-								id="property-info-trigger-hover"
-								v-model="tempPropertyInfoTrigger"
-								hidden
-							/>
-							<label for="property-info-trigger-hover">
-								<FontAwesomeIcon icon="square-check" v-if="tempPropertyInfoTrigger === 'hover'" />
-								悬停</label
-							>
-						</div>
-						<div>
-							<input
-								type="radio"
-								name="property-info-trigger"
-								value="click"
-								id="property-info-trigger-click"
-								v-model="tempPropertyInfoTrigger"
-								hidden
-							/>
-							<label for="property-info-trigger-click">
-								<FontAwesomeIcon icon="square-check" v-if="tempPropertyInfoTrigger === 'click'" />
-								点击</label
-							>
-						</div>
+						<div class="setting-hint">点击地块查看，点详情右上角 × 或按 Esc 关闭</div>
 					</div>
 				</div>
 
@@ -791,6 +757,12 @@ const applySettings = () => {
 				display: flex;
 				justify-content: space-around;
 				align-items: center;
+
+				.setting-hint {
+					color: var(--fp-color-text-secondary);
+					font-size: 0.85rem;
+					text-align: center;
+				}
 
 				& input[type="radio"]:checked + label {
 					color: var(--fp-color-primary);

@@ -15,6 +15,7 @@ import type { SaveRecord } from "@src/core/save";
 import { useLocalParty } from "@src/store/local-party";
 import { useUserInfo } from "@src/store";
 import { useMapData } from "@src/store/game";
+import { findOfflineMapByMapId } from "@src/utils/offline-maps";
 
 const MAX_PLAYERS = 6;
 const BROADCAST_TYPES = new Set<SocketMsgType>([
@@ -201,9 +202,13 @@ export class LocalPartySession {
 		const rebuildResult = await this.rebuildHumansForSave(record, usePrevious);
 		if (!rebuildResult.success) return rebuildResult;
 
+		// 存档对应客户端内置地图时直接走离线加载，读档同样不需要服务器。
+		const offlineEntry = findOfflineMapByMapId(record.mapId);
 		const mapInfo = canReusePreviousMap && previousMapInfo
 			? previousMapInfo
-			: { from: "server" as const, data: record.mapId };
+			: offlineEntry
+				? { from: "offline" as const, data: offlineEntry.id }
+				: { from: "server" as const, data: record.mapId };
 		const mapResult = await this.changeGameMap(mapInfo);
 		if (!mapResult.success) return mapResult;
 

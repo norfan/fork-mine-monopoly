@@ -252,7 +252,8 @@ export const useGameLog = defineStore("gameLog", {
 	} => {
 		return {
 			visible: false,
-			logLimit: 30,
+			// 现在只记录资产与资金变动，且每条都是详细结算，容量放宽避免关键流水被挤掉。
+			logLimit: 120,
 			gameLogQueue: new Array<GameLog>(),
 		};
 	},
@@ -292,7 +293,8 @@ export const useSettig = defineStore("setting", {
 			// 视图模式：立体 / 俯视棋盘。纯本地设置，不同步给其他玩家，旁观者同样可用
 			viewMode: "3d" as ViewMode,
 			chatRenderMode: "bubble" as "danmaku" | "bubble",
-			propertyInfoTrigger: "hover" as "hover" | "click",
+			// 地块信息固定为「点击地块查看」，不再提供悬停触发（保留字段兼容旧存档/设置）。
+			propertyInfoTrigger: "click" as "hover" | "click",
 			// 画面质量设置：低/中/高三档
 			graphicQuality: "medium" as "low" | "medium" | "high",
 			// 阴影开关

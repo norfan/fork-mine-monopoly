@@ -9,6 +9,7 @@
 	import Help from "./components/help.vue";
 	import CameraFocusButton from "./components/camera-focus-button.vue";
 	import ViewModeButton from "./components/view-mode-button.vue";
+	import GamePauseButton from "./components/game-pause-button.vue";
 	import MapInfoButton from "./components/map-info-button.vue";
 	import SaveButton from "./components/save-button.vue";
 
@@ -24,6 +25,7 @@
 		<!-- <FullScreenButton /> -->
 		<CameraFocusButton />
 		<ViewModeButton />
+		<GamePauseButton />
 		<MapInfoButton />
 		<Help />
 		<SaveButton />

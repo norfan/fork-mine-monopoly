@@ -8,6 +8,7 @@ import { useMapData, useResourceStore } from "@src/store/game";
 import { formatBytes } from "@src/utils";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { getDracoLoader } from "../draco/draco";
+import { findOfflineMap, loadOfflineMapBytes, offlineAssetUrl } from "../offline-maps";
 
 /**
  * 地图在写入客户端 store / Worker 前必须满足的 MapPath 运行时前置条件。
@@ -286,6 +287,33 @@ export async function loadGameMapFromFile(file: ArrayBuffer) {
 	};
 	useLoading().hideLoading();
 	return { gameMap, mapInfo };
+}
+
+/**
+ * 加载客户端内置的离线官方地图。
+ * 直接读取 public/offline-maps 下的 .fpmap，不请求服务器，也不需要房主通过 P2P 分块传输。
+ */
+export async function loadGameMapFromOffline(id: string) {
+	const entry = findOfflineMap(id);
+	if (!entry) throw new Error(`找不到内置地图: ${id}`);
+	const bytes = await loadOfflineMapBytes(id);
+	const { gameMap, mapInfo } = await loadGameMapFromFile(bytes.slice().buffer as ArrayBuffer);
+	return {
+		gameMap,
+		mapInfo: {
+			...mapInfo,
+			// 用清单 ID 作为房间地图 ID，保证选图回显与再次打开选择器时的选中态一致。
+			id: entry.id,
+			name: entry.name,
+			author: entry.author,
+			version: Number(entry.version.split(".")[0]) || 1,
+			description: entry.description,
+			hash: `offline-${entry.id}`,
+			coverUrl: mapInfo.coverUrl || offlineAssetUrl(entry.cover),
+			isOfficial: true,
+			status: "published" as const,
+		} satisfies GameMapInDb,
+	};
 }
 
 async function loadMapDataToResourceStore(mapData: {

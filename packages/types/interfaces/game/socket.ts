@@ -85,6 +85,8 @@ export interface MapTransferRequestData {
 
 export type RoomMapInfo =
 	| { from: "server"; data: string }
+	/** 客户端内置的离线地图：data 为内置清单 ID，客机各自从本地资源读取，不需要 P2P 传输。 */
+	| { from: "offline"; data: string }
 	| {
 			from: "custom";
 			data: Base64String | Uint8Array;

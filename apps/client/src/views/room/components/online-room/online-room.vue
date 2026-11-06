@@ -8,6 +8,7 @@ import ItemSelector from "@src/components/utils/item-selector/item-selector.vue"
 import router from "@src/router";
 import { useLoading, useRoomInfo, useSettig, useUserInfo } from "@src/store";
 import { getGameMapById, getGameMapList } from "@src/utils/api/map";
+import { getOfflineMapList, isOfflineMapId, mergeOfflineWithServerMaps } from "@src/utils/offline-maps";
 import { MonopolyClient, useMonopolyClient } from "@src/core/monopoly-client/MonopolyClient";
 import { computed, h, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from "vue";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
@@ -89,8 +90,12 @@ watch(
 
 function handleChangeMap() {
 	if (socketClient && tempMapSelectedId.value.length > 0 && tempMapSelectedId.value[0] !== currentMap.value?.id) {
-		useLoading().showLoading("地图传输中...");
-		socketClient.changeGameMap({ from: "server", data: tempMapSelectedId.value[0] });
+		const mapId = tempMapSelectedId.value[0];
+		const offline = isOfflineMapId(mapId);
+		useLoading().showLoading(offline ? "正在加载内置地图..." : "地图传输中...");
+		socketClient.changeGameMap(
+			offline ? { from: "offline" as const, data: mapId } : { from: "server" as const, data: mapId },
+		);
 	}
 }
 
@@ -285,17 +290,19 @@ async function handleDeleteSave(record: SaveRecord) {
 	}
 }
 
-async function handleSelectMap() {
-	try {
-		useLoading().showLoading("地图列表加载中...");
-		const { gameMapList } = await getGameMapList(1, 1000);
-		mapList.value = gameMapList;
-		mapSelectorVisible.value = true;
-	} catch {
-		FPMessage({ type: "error", message: "加载地图列表失败" });
-	} finally {
-		useLoading().hideLoading();
-	}
+function handleSelectMap() {
+	// 默认直接使用客户端内置的离线地图，不依赖服务器、不阻塞、不弹提示。
+	mapList.value = getOfflineMapList();
+	mapSelectorVisible.value = true;
+
+	// 联网时把服务器上其它官方地图追加到列表末尾；离线/接口异常时静默保留内置列表。
+	void getGameMapList(1, 1000)
+		.then(({ gameMapList }) => {
+			mapList.value = mergeOfflineWithServerMaps(gameMapList);
+		})
+		.catch(() => {
+			/* 保持内置地图列表 */
+		});
 }
 
 async function handleUploadMap() {

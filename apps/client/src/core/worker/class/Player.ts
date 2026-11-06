@@ -40,6 +40,23 @@ export interface MapMovementHistoryEntry {
 	direction: MapMoveDirection;
 }
 
+/** 一次资金变动的完整明细，供房主写入游戏记录。 */
+export interface MoneyChangeRecord {
+	direction: "gain" | "cost" | "set";
+	/** 业务请求的金额 */
+	requested: number;
+	/** 实际发生变动的金额（资金不足时可能小于请求值） */
+	actual: number;
+	before: number;
+	after: number;
+	tag?: MoneyTagType;
+	/** 交易对手玩家 ID（收款方 / 付款方） */
+	counterpartId?: string;
+	success: boolean;
+}
+
+export type MoneyChangeObserver = (player: Player, record: MoneyChangeRecord) => void;
+
 export class Player implements IPlayer {
 	public id: string;
 	public name: string;
@@ -72,6 +89,12 @@ export class Player implements IPlayer {
 	private user: UserInRoomInfo;
 	private roleInitFunction: (player: IPlayer, gameProcess: IGameProcess) => void;
 	private bankruptcyHandler?: (player: Player) => Promise<void>;
+	private moneyChangeObserver?: MoneyChangeObserver;
+
+	/** 注册资金变动观察器：所有 gain/cost/setMoney 都会经过这里，包括自定义地图脚本触发的变动。 */
+	public setMoneyChangeObserver(observer?: MoneyChangeObserver) {
+		this.moneyChangeObserver = observer;
+	}
 
 	constructor(
 		user: UserInRoomInfo,
@@ -188,17 +211,39 @@ export class Player implements IPlayer {
 		});
 
 		this.commandBus.setHandler("player.money.gain", (payload) => {
-			const { money } = payload;
+			const { money, source, tag } = payload;
+			const before = this.money;
 			this.money += money;
+			this.moneyChangeObserver?.(this, {
+				direction: "gain",
+				requested: money,
+				actual: money,
+				before,
+				after: this.money,
+				tag,
+				counterpartId: source?.id,
+				success: true,
+			});
 			return payload;
 		});
 
 		this.commandBus.setHandler("player.money.lose", async (payload) => {
-			const { money } = payload;
+			const { money, target, tag } = payload;
+			const before = this.money;
 			const moneyToLose = money > 0 ? money : 0;
 			const success = this.money >= moneyToLose;
 			const actualCost = success ? moneyToLose : this.money;
 			this.money -= actualCost;
+			this.moneyChangeObserver?.(this, {
+				direction: "cost",
+				requested: moneyToLose,
+				actual: actualCost,
+				before,
+				after: this.money,
+				tag,
+				counterpartId: target?.id,
+				success,
+			});
 			if (this.money <= 0) await this.markBankrupted();
 			return {
 				...payload,
@@ -259,7 +304,16 @@ export class Player implements IPlayer {
 	}
 
 	public async setMoney(money: number) {
+		const before = this.money;
 		this.money = money;
+		this.moneyChangeObserver?.(this, {
+			direction: "set",
+			requested: money,
+			actual: money,
+			before,
+			after: this.money,
+			success: true,
+		});
 		if (this.money <= 0) await this.markBankrupted();
 	}
 

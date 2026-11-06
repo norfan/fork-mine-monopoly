@@ -175,6 +175,8 @@ export class GameRenderer {
 	private activeThinkingMarkers: Map<string, ActiveThinkingMarker> = new Map();
 	/** 计算文字标签屏幕尺寸时复用，避免每帧分配 */
 	private readonly textWorldScale = new THREE.Vector3();
+	/** 详情浮层夹回视口时复用，避免每帧分配 */
+	private readonly mapInfoWorldPosition = new THREE.Vector3();
 	/** 3D 视图是否已经完成过聚焦；未聚焦时切到俯视不记录位姿 */
 	private hasInitial3DView = false;
 	private isRenderDice = false;
@@ -256,19 +258,30 @@ export class GameRenderer {
 				const gammaPass = new ShaderPass(GammaCorrectionShader);
 				this.composer.addPass(gammaPass);
 
-				const { css2DObject: propertyCSS2DObject, appInstance: propertyInfoLabelInstance } = createCSS2DObjectFromVue(
-					PropertyInfoCard,
-					{
-						property: null,
-					},
-				);
+				const {
+					css2DObject: propertyCSS2DObject,
+					appInstance: propertyInfoLabelInstance,
+					containerEl: propertyInfoContainer,
+				} = createCSS2DObjectFromVue(PropertyInfoCard, {
+					property: null,
+					closable: true,
+					onClose: () => this.closeMapInfo("property"),
+				});
+				// 地图信息层整体不拦截鼠标，只有浮层自身接收事件，才能点 × 关闭。
+				propertyInfoContainer.style.pointerEvents = "auto";
 				this.propertyInfoLabel = propertyCSS2DObject;
 				this.propertyInfoLabelInstance = propertyInfoLabelInstance;
 
-				const { css2DObject: arrivedEventCSS2DObject, appInstance: arrivedEventLabelInstance } =
-					createCSS2DObjectFromVue(MapEventCard, {
-						mapEvent: null,
-					});
+				const {
+					css2DObject: arrivedEventCSS2DObject,
+					appInstance: arrivedEventLabelInstance,
+					containerEl: arrivedEventContainer,
+				} = createCSS2DObjectFromVue(MapEventCard, {
+					mapEvent: null,
+					closable: true,
+					onClose: () => this.closeMapInfo("mapEvent"),
+				});
+				arrivedEventContainer.style.pointerEvents = "auto";
 				this.arrivedEventInfoLabel = arrivedEventCSS2DObject;
 				this.arrivedEventInfoLabelInstance = arrivedEventLabelInstance;
 
@@ -417,7 +430,7 @@ export class GameRenderer {
 				propertyPointerDown = null;
 				return;
 			}
-			if (event.button !== 0 || useSettig().propertyInfoTrigger !== "click" || this.pathChoiceController.isActive) return;
+			if (event.button !== 0 || this.pathChoiceController.isActive) return;
 			propertyPointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY, dragged: false };
 		};
 		const onPropertyPointerMove = (event: PointerEvent) => {
@@ -436,7 +449,6 @@ export class GameRenderer {
 				wasDragging ||
 				event.button !== 0 ||
 				!isTargetOnCanvas(event.target) ||
-				useSettig().propertyInfoTrigger !== "click" ||
 				this.pathChoiceController.isActive
 			) {
 				return;
@@ -464,16 +476,12 @@ export class GameRenderer {
 			window.removeEventListener("pointerup", onPropertyPointerUp);
 			window.removeEventListener("pointercancel", onPropertyPointerCancel);
 		});
-		this.commonWatchers.push(
-			watch(
-				() => useSettig().propertyInfoTrigger,
-				() => {
-					this.selectedPropertyId = null;
-					this.selectedMapEventItemId = null;
-					propertyPointerDown = null;
-				},
-			),
-		);
+		// 详情浮层支持 Esc 关闭；点击空白关闭由 pointerup 的拾取逻辑负责。
+		const onMapInfoKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") this.closeMapInfo();
+		};
+		window.addEventListener("keydown", onMapInfoKeyDown);
+		this.commonWatchers.push(() => window.removeEventListener("keydown", onMapInfoKeyDown));
 
 		// 加载期间用户可能已经点过切换按钮，这里按设置再同步一次（幂等）
 		const pendingViewMode = useSettig().viewMode;
@@ -541,6 +549,8 @@ export class GameRenderer {
 
 				this.popElementRenderer.render(this.scene, this.camera);
 				this.mapInfoRenderer.render(this.mapInfoScene, this.camera);
+				// CSS2DRenderer 按 3D 投影摆位，投影点出屏时浮层（含关闭按钮）会被容器裁掉。
+				this.clampMapInfoPopups();
 				this.updateActiveSpeechBubbleLayout();
 
 				if (this.isRenderDice && this.diceManager) {
@@ -1647,18 +1657,71 @@ export class GameRenderer {
 		// 选路期间由路线控制器管理光标。
 		if (this.pathChoiceController.isActive) return;
 		const clickable =
-			useSettig().propertyInfoTrigger === "click" &&
 			isPointerOnCanvas &&
 			(this.getPropertyAtPointer(raycaster, pointer) !== null || this.getMapEventAtPointer(raycaster, pointer) !== null);
 		this.canvas.style.cursor = clickable ? "pointer" : "";
 	}
 
+	/** 手动关闭地块 / 事件详情浮层，同时清掉选中态，避免下一帧又按 ID 重新显示。 */
+	private closeMapInfo(kind: "property" | "mapEvent" | "all" = "all") {
+		if (kind !== "mapEvent") {
+			this.selectedPropertyId = null;
+			//@ts-ignore
+			this.propertyInfoLabelInstance?.updateProperty(null);
+		}
+		if (kind !== "property") {
+			this.selectedMapEventItemId = null;
+			//@ts-ignore
+			this.arrivedEventInfoLabelInstance?.updateArrivedEvent(null);
+		}
+	}
+
+	/**
+	 * 地块 / 事件详情是跟随 3D 地块投影的 CSS2D 浮层。相机旋转或地块靠近边缘时，
+	 * 投影点会落到视口外，整个浮层被 CSS2DRenderer 的 overflow:hidden 裁掉，
+	 * 右上角的 × 也跟着消失（移动端没有 Esc，只能点空白关闭）。
+	 * 每帧渲染后把浮层中心夹回可视区域，保证内容与关闭按钮始终可见可点。
+	 */
+	private clampMapInfoPopups() {
+		const viewportWidth = this.container.clientWidth;
+		const viewportHeight = this.container.clientHeight;
+		if (viewportWidth <= 0 || viewportHeight <= 0) return;
+
+		const margin = 12;
+		for (const popup of [this.propertyInfoLabel, this.arrivedEventInfoLabel]) {
+			if (!popup) continue;
+			const el = popup.element;
+			// 相机背后的对象会被渲染器隐藏；详情未展开时 Vue 的 v-if 让容器为空，都不需要处理。
+			if (el.style.display === "none") continue;
+			const width = el.offsetWidth;
+			const height = el.offsetHeight;
+			if (width <= 0 || height <= 0) continue;
+
+			const projection = this.projectWorldPosition(popup.getWorldPosition(this.mapInfoWorldPosition));
+			if (!projection.isInFront) continue;
+
+			const halfWidth = width / 2;
+			const halfHeight = height / 2;
+			const minX = margin + halfWidth;
+			const maxX = viewportWidth - margin - halfWidth;
+			const minY = margin + halfHeight;
+			const maxY = viewportHeight - margin - halfHeight;
+			// 浮层比视口还大时（组件样式已限制尺寸）退化为居中，至少保证 × 可见。
+			const centerX = maxX >= minX ? THREE.MathUtils.clamp(projection.screenX, minX, maxX) : viewportWidth / 2;
+			const centerY = maxY >= minY ? THREE.MathUtils.clamp(projection.screenY, minY, maxY) : viewportHeight / 2;
+
+			el.style.transform =
+				`translate(${-100 * popup.center.x}%,${-100 * popup.center.y}%) ` +
+				`translate(${centerX}px,${centerY}px)`;
+		}
+	}
+
 	private handlePropertyRaycaster(raycaster: THREE.Raycaster, pointer: THREE.Vector2, selectOnClick = false) {
-		const clickMode = useSettig().propertyInfoTrigger === "click";
+		// 详情固定为点击触发：只有点击时重新拾取，其余帧按已选中的 ID 保持显示。
 		let target: THREE.Object3D | null = null;
-		if (!clickMode || selectOnClick) {
+		if (selectOnClick) {
 			target = this.getPropertyAtPointer(raycaster, pointer);
-			this.selectedPropertyId = clickMode && target ? target.userData.id : null;
+			this.selectedPropertyId = target ? target.userData.id : null;
 		} else if (this.selectedPropertyId) {
 			// 按 ID 读取当前模型，确保地皮升级或归属变化后仍显示最新信息。
 			target = this.housesItems.get(this.selectedPropertyId)?.group ?? null;
@@ -1675,11 +1738,10 @@ export class GameRenderer {
 	}
 
 	private handleMapEventRaycaster(raycaster: THREE.Raycaster, pointer: THREE.Vector2, selectOnClick = false) {
-		const clickMode = useSettig().propertyInfoTrigger === "click";
 		let target: THREE.Object3D | null = null;
-		if (!clickMode || selectOnClick) {
+		if (selectOnClick) {
 			target = this.getMapEventAtPointer(raycaster, pointer);
-			this.selectedMapEventItemId = clickMode && target ? target.userData.id : null;
+			this.selectedMapEventItemId = target ? target.userData.id : null;
 		} else if (this.selectedMapEventItemId) {
 			// 事件可能动态替换或移除，始终读取选中地块的当前信息。
 			target = this.mapItemsInScene.get(this.selectedMapEventItemId) ?? null;

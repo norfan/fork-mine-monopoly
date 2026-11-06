@@ -38,26 +38,23 @@ const layoutClass = computed(() => {
 	return `layout-${props.layout}`;
 });
 
-// 根据回合状态调整按钮启用状态
-const updateButtonsEnabledState = () => {
-	const canRoll = utilStore.canRoll;
+// 只有在自己回合且游戏未暂停时，动态按钮才可用
+const canOperate = computed(() => utilStore.canRoll && !utilStore.gamePaused);
 
+// 根据回合状态与暂停状态调整按钮启用状态
+const updateButtonsEnabledState = () => {
 	buttons.value.forEach((button) => {
-		// 只有在自己回合(canRoll = true)时，按钮才能使用
-		button.enabled = canRoll;
+		button.enabled = canOperate.value;
 	});
 
 	// 触发响应式更新
 	buttons.value = [...buttons.value];
 };
 
-// 监听 canRoll 状态变化
-watch(
-	() => utilStore.canRoll,
-	() => {
-		updateButtonsEnabledState();
-	},
-);
+// 监听可操作状态变化（回合切换 / 暂停 / 继续）
+watch(canOperate, () => {
+	updateButtonsEnabledState();
+});
 
 // 事件处理器
 const handleButtonRegister = (message: ButtonRegisterMessage) => {
@@ -65,7 +62,7 @@ const handleButtonRegister = (message: ButtonRegisterMessage) => {
 		id: message.buttonId,
 		playerId: props.playerId,
 		text: message.text,
-		enabled: message.enabled && utilStore.canRoll, // 结合服务器状态和回合状态
+		enabled: message.enabled && canOperate.value, // 结合服务器状态、回合状态与暂停状态
 		visible: message.visible,
 		callback: () => {},
 	};
@@ -84,8 +81,8 @@ const handleButtonStateChanged = (message: ButtonStateChangedMessage) => {
 	const button = buttons.value.find((b) => b.id === message.buttonId);
 	if (button) {
 		if (message.enabled !== undefined) {
-			// 服务器设置的 enabled 状态需要结合 canRoll 来决定最终状态
-			button.enabled = message.enabled && utilStore.canRoll;
+			// 服务器设置的 enabled 状态需要结合回合与暂停状态来决定最终状态
+			button.enabled = message.enabled && canOperate.value;
 		}
 		if (message.visible !== undefined) {
 			button.visible = message.visible;
@@ -105,6 +102,8 @@ const handleButtonRemove = (message: ButtonRemoveMessage) => {
 };
 
 const handleButtonClick = (buttonId: string) => {
+	// 暂停期间不派发动态按钮操作，防止倒计时冻结时误触发
+	if (utilStore.gamePaused) return;
 	const socketClient = useMonopolyClient();
 	if (socketClient) {
 		socketClient.sendDynamicButtonClick(buttonId);

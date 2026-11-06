@@ -153,6 +153,31 @@ function generatePopItem(e: MouseEvent, itemType: GameLogLinkItem, props: any) {
 	}
 }
 
+/** 把结算金额拆出来高亮：收入红、支出绿，余额等普通数字保持原样。 */
+type AmountFragment = { text: string; tone: "gain" | "cost" | "plain" };
+
+function splitAmount(text: string): AmountFragment[] {
+	const fragments: AmountFragment[] = [];
+	const regex = /([+−-]?)([\d,]+)￥/g;
+	let lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = regex.exec(text)) !== null) {
+		if (match.index > lastIndex) {
+			fragments.push({ text: text.slice(lastIndex, match.index), tone: "plain" });
+		}
+		const sign = match[1];
+		fragments.push({
+			text: match[0],
+			tone: sign === "+" ? "gain" : sign === "−" || sign === "-" ? "cost" : "plain",
+		});
+		lastIndex = regex.lastIndex;
+	}
+	if (lastIndex < text.length) {
+		fragments.push({ text: text.slice(lastIndex), tone: "plain" });
+	}
+	return fragments;
+}
+
 const logTime = computed(() => {
 	const date = new Date(props.gameLog.time); // 创建 Date 对象
 	const hours = String(date.getUTCHours()).padStart(2, "0"); // 获取小时并补零
@@ -166,8 +191,12 @@ const logTime = computed(() => {
 <template>
 	<div class="game-log-item">
 		<span class="time">{{ logTime }}:</span>
-		<template v-for="log in gameLogArr">
-			<span v-if="log.type === GameLogType.Text" class="text-item">{{ log.content }}</span>
+		<template v-for="(log, logIndex) in gameLogArr" :key="logIndex">
+			<span v-if="log.type === GameLogType.Text" class="text-item"><span
+					v-for="(fragment, fragmentIndex) in splitAmount(log.content as string)"
+					:key="fragmentIndex"
+					:class="`amount-${fragment.tone}`"
+				>{{ fragment.text }}</span></span>
 			<span
 				v-else
 				class="link-item"
@@ -189,10 +218,19 @@ const logTime = computed(() => {
 	}
 	& > .text-item {
 		color: var(--fp-color-primary);
+		white-space: pre-wrap;
 	}
 	& > .link-item {
 		text-decoration: underline;
 		cursor: pointer;
+	}
+	.amount-gain {
+		color: #c0392b;
+		font-weight: 600;
+	}
+	.amount-cost {
+		color: #2e8b57;
+		font-weight: 600;
 	}
 }
 </style>

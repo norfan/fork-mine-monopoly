@@ -34,7 +34,7 @@ import PropertyInfoVue from "@src/components/common/property-card.vue";
 import { useGameData, useMapData, useResourceStore } from "@src/store/game";
 import { getCurrentClientPlayerId, useLocalParty } from "@src/store/local-party";
 import { GameMap } from "@mine-monopoly/utils/protos/game-map";
-import { loadGameMapFromFile, loadGameMapFromServer } from "@src/utils/file/game-map";
+import { loadGameMapFromFile, loadGameMapFromOffline, loadGameMapFromServer } from "@src/utils/file/game-map";
 import { base64ToArrayBuffer } from "@mine-monopoly/utils";
 import { showTargetSelector } from "@src/components/common/target-seletor";
 import { showItemSelector } from "@src/components/utils/item-selector";
@@ -365,6 +365,13 @@ const handleChangeMapInternal = async (
 		switch (data.from) {
 			case "server": {
 				const res = await loadGameMapFromServer(data.data);
+				gameMap = res.gameMap;
+				mapInfo = res.mapInfo;
+				break;
+			}
+			case "offline": {
+				// 内置离线地图：每个客户端从自己的本地资源读取，无需服务器与 P2P 传输。
+				const res = await loadGameMapFromOffline(data.data);
 				gameMap = res.gameMap;
 				mapInfo = res.mapInfo;
 				break;

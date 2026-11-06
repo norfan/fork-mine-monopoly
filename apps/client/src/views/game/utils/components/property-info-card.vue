@@ -4,7 +4,8 @@ import { PropertyInfo } from "@mine-monopoly/types";
 import { useMapData, useGameData } from "@src/store/game";
 import UiRenderer from "@src/components/utils/ui-renderer/ui-renderer.vue";
 
-const props = defineProps<{ property: PropertyInfo | null }>();
+const props = defineProps<{ property: PropertyInfo | null; closable?: boolean }>();
+const emit = defineEmits(["close"]);
 
 const _property = ref<PropertyInfo | null>(props.property);
 
@@ -34,6 +35,11 @@ function updateProperty(newProperty: PropertyInfo | null) {
 	_property.value = newProperty;
 }
 
+function handleClose() {
+	_property.value = null;
+	emit("close");
+}
+
 function getUiTemplateById(id: string) {
 	const schema = useMapData().getUITempolateById(id)?.template || {
 		id: "404",
@@ -47,7 +53,8 @@ defineExpose({ updateProperty });
 </script>
 
 <template>
-	<template v-if="_property">
+	<div v-if="_property" class="map-info-popup">
+		<button v-if="closable" type="button" class="map-info-close" title="关闭详情" @click.stop="handleClose">×</button>
 		<!-- 自定义 UI -->
 		<template v-if="_property.customUI">
 			<div class="property-info custom-ui">
@@ -134,7 +141,7 @@ defineExpose({ updateProperty });
 				</div>
 			</template>
 		</div>
-	</template>
+	</div>
 </template>
 
 <style lang="scss" scoped>
@@ -142,10 +149,46 @@ defineExpose({ updateProperty });
 @use "@mine-monopoly/style/variables" as fp;
 @use "@mine-monopoly/style/mixins" as fp-mixins;
 
+.map-info-popup {
+	position: relative;
+}
+
+.map-info-close {
+	// 放在浮层内部（而不是外侧负偏移），避免被 CSS2DRenderer 的 overflow:hidden 裁掉。
+	// 它是内容卡片的兄弟节点，内容滚动时按钮固定不动。
+	position: absolute;
+	top: 0.35rem;
+	right: 0.35rem;
+	z-index: 3;
+	width: 1.6rem;
+	height: 1.6rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 0.0625rem solid rgba(0, 0, 0, 0.15);
+	border-radius: 50%;
+	background: #fff;
+	color: var(--fp-color-primary);
+	font-size: 1.15rem;
+	line-height: 1;
+	cursor: pointer;
+	box-shadow: var(--fp-shadow-md, 0 0.125rem 0.5rem rgba(0, 0, 0, 0.25));
+
+	&:hover {
+		background: var(--fp-color-primary);
+		color: #fff;
+	}
+}
+
 .property-info {
 	@include fp-mixins.fp-felt-patch;
-	min-width: 16rem;
-	max-width: 20rem;
+	// 内容过长/过宽时只在卡片内部滚动，避免小屏上整个浮层比视口还大，
+	// 夹回视口后关闭按钮仍然被挤出屏幕。
+	min-width: min(16rem, 86vw);
+	max-width: min(20rem, 86vw);
+	max-height: 70vh;
+	overflow: auto;
+	box-sizing: border-box;
 	display: flex;
 	flex-direction: column;
 	gap: 0.8rem;
